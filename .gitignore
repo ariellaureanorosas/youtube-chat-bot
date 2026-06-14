@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Navegador / Perfil
+browser_profile/
+
+# Logs
+logs/
+*.log
+
+# Outros
+nul
+yt_status.png
+*.ps1
