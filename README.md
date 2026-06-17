@@ -1,67 +1,87 @@
-# 🎥 YouTube Chat Bot — TV IEBT
+# YouTube Chat Bot - TV IEBT
 
-Bot de chat ao vivo para YouTube que responde automaticamente às mensagens dos espectadores durante as lives da **TV IEBT** (Igreja Evangélica Batista em Timbí).
+Bot de chat ao vivo para YouTube que responde automaticamente as mensagens dos
+espectadores durante as lives. Usa **Playwright** para automacao do chat e
+**Deepseek** (via API OpenCode Zen) para gerar respostas naturais.
 
-Usa **Playwright** + **Brave** para automação do chat e **Deepseek** (via API OpenAI) para gerar respostas naturais e acolhedoras com a personalidade da equipe de comunicação da igreja.
+## Funcionalidades
 
-## ✨ Funcionalidades
+- Respostas inteligentes com IA (Deepseek)
+- Modos: IA total, hibrido (keywords + IA), ou regras fixas
+- Anti-loop: detecta mensagens do proprio bot e ignora
+- Anti-detecao: navegador disfarcado (webdriver, WebGL, screen resolution)
+- Login persistente: loga uma vez, reusa a sessao
+- Rate limiting: evita flood no chat
+- Fallback: se IA falhar, usa respostas fixas
+- Reconnect automatico: ate 3 tentativas se o chat cair
 
-- **🤖 Respostas inteligentes** — IA entende o contexto e responde apenas quando apropriado
-- **🙅 Evita duplicação** — não repete a mesma mensagem duas vezes
-- **🪞 Anti-loop** — detecta mensagens do próprio bot e ignora
-- **🛡️ Anti-detecção** — navegador disfarçado (navigator.webdriver, chrome.runtime, etc.)
-- **💾 Login persistente** — você loga uma vez e o bot reusa a sessão
-- **🚀 Início automático** — pode ligar sozinho quando o PC inicia (Task Scheduler)
-- **📝 Menção ao autor** — responde citando o nome da pessoa quando é uma mensagem individual
-
-## 🧱 Estrutura
+## Estrutura
 
 ```
 youtube-chat-bot/
-├── youtube_chat_bot.py   # Bot principal (loop, chat, anti-detection)
-├── ai_responder.py        # Integração com a IA
-├── login_helper.py        # Login no Google/YouTube
-├── config.yaml            # Configurações (modelo, prompt, canais)
-├── iniciar_bot.bat        # Atalho pra iniciar o bot
-├── browser_profile/       # Sessão do navegador (login salvo)
-├── logs/                  # Logs das execuções
-└── venv/                  # Ambiente virtual Python
+  youtube_chat_bot.py   Bot principal
+  ai_responder.py       Integracao com a IA
+  login_helper.py       Login no Google/YouTube
+  browser_utils.py      Utilitarios de navegador compartilhados
+  config.yaml           Configuracoes
+  iniciar_bot.bat       Atalho pra iniciar o bot
+  requirements.txt      Dependencias
+  tests/                Testes unitarios
+  browser_profile/      Sessao do navegador (login salvo)
+  logs/                 Logs das execucoes
 ```
 
-## ⚙️ Como usar
+## Como usar
 
-### 1. Instalar dependências
+### 1. Instalar dependencias
 
 ```bash
-pip install playwright pyyaml openai
+pip install -r requirements.txt
 playwright install chromium
 ```
 
-### 2. Fazer login
+### 2. Configurar API Key
+
+Defina a variavel de ambiente:
+
+```bash
+# Linux/Mac
+export OPENCODE_ZEN_API_KEY=sua_chave_aqui
+
+# Windows (cmd)
+set OPENCODE_ZEN_API_KEY=sua_chave_aqui
+```
+
+Ou crie um arquivo `.env` na raiz do projeto:
+
+```
+OPENCODE_ZEN_API_KEY=sua_chave_aqui
+```
+
+### 3. Fazer login
 
 ```bash
 python login_helper.py
 ```
 
-Isso abre o navegador Brave (ou Chrome) na página de login do Google. Faça login na conta do YouTube da TV IEBT e feche o navegador. A sessão fica salva em `browser_profile/`.
+Isso abre o navegador na pagina de login do Google. Faca login e feche a janela.
+A sessao fica salva em `browser_profile/`.
 
-### 3. Configurar
+### 4. Configurar
 
 Edite o `config.yaml`:
 
 ```yaml
-youtube:
-  channel_name: "tviebt"          # Nome do seu canal
-  live_check_interval: 30         # Segundos entre verificações de live ativa
+channel:
+  name: "tviebt"            # @ do canal
 
 ai:
-  model: "deepseek-v4-flash-free" # Modelo da IA
-  provider: "opencode-zen"        # Provedor (OpenAI-compatible)
-  max_tokens: 1000
-  system_prompt: "..."            # Personalidade do bot
+  mode: ai                  # ai | hybrid | off
+  model: deepseek-v4-flash-free
+  fallback_to_rules: true   # fallback para regras se IA falhar
 ```
 
-### 4. Rodar
+### 5. Rodar
 
 ```bash
 python youtube_chat_bot.py
@@ -69,24 +89,41 @@ python youtube_chat_bot.py
 
 Ou clique duas vezes em `iniciar_bot.bat`.
 
-## 🔧 Personalidade da IA
+## Configuracao da IA
 
-O bot usa um **system prompt** que define a persona da equipe de comunicação da igreja: tom respeitoso, acolhedor e institucional, evitando debates, respondendo apenas saudações e perguntas pertinentes com amor cristão.
+O system prompt no `config.yaml` define a personalidade do bot. Por padrao:
 
-Você pode editar esse prompt no `config.yaml` para ajustar o tom.
+- Fala em 1 pessoa do plural ("nos da TV IEBT")
+- Responde apenas quando apropriado (perguntas, oracoes, saudações)
+- Ignora reacoes emocionais genericas
+- Mantem tom respeitoso e institucional
+- Retorna "SKIP" quando nao deve responder
 
-## 🛠️ Tecnologias
+## Solucao de Problemas
 
-- **Python 3.11+**
-- **Playwright** — automação do navegador
-- **Brave Browser** (navegador principal)
-- **Deepseek** via API OpenAI (OpenCode Zen)
-- **Hermes Agent** — CLI agent que gerencia o bot
+**O bot nao encontra o navegador:**
+O `browser_utils.py` procura Brave, Chrome e Chromium em locais comuns.
+Se seu navegador estiver em local diferente, defina a variavel:
+```
+export BROWSER_PATH=/caminho/do/seu/navegador
+```
 
-## 🤝 Contribuindo
+**A IA nao responde:**
+- Verifique se `OPENCODE_ZEN_API_KEY` esta configurada
+- Verifique os logs em `logs/`
+- Em modo `ai` sem fallback, o bot fica quieto se a API cair
 
-Este é um projeto da **TV IEBT**. Sinta-se à vontade para abrir issues ou sugerir melhorias!
+**O chat para de responder:**
+O bot tem reconexao automatica (ate 3 tentativas). Verifique os logs.
 
----
+## Tecnologias
 
-**TV IEBT** — Igreja Evangélica Batista em Timbí 🙏
+- Python 3.11+
+- Playwright (automacao de navegador)
+- aiohttp (cliente HTTP async)
+- Deepseek via API OpenCode Zen
+- PyYAML
+
+## Licenca
+
+Projeto da TV IEBT - Igreja Evangelica Batista em Timbi

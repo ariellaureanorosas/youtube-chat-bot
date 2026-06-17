@@ -22,6 +22,7 @@ ai:
   model: deepseek-v4-flash-free
   temperature: 0.7                # Mais baixo = mais consistente com o persona
   max_tokens: 1000
+  fallback_to_rules: true         # Se IA falhar, tenta regras fixas
 
   # Personalidade completa da IA — define quando responder, quando ignorar
   system_prompt: |
@@ -162,3 +163,4 @@ settings:
   headless: false              # true = esconder navegador, false = mostrar
   language: pt                 # idioma do YouTube
   log_level: INFO              # DEBUG | INFO | WARNING | ERROR
+  save_interval: 300           # segundos entre salvamentos do histórico
