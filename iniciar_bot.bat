@@ -2,8 +2,10 @@
 REM ============================================
 REM  INICIAR BOT DO YOUTUBE LIVE CHAT
 REM ============================================
-cd /d "C:\Users\TRANSMISSÃO - IEBT\youtube-chat-bot"
-call venv\Scripts\activate.bat
+cd /d "%~dp0"
+if exist venv\Scripts\activate.bat (
+    call venv\Scripts\activate.bat
+)
 echo -------------------------------------------
 echo  YouTube Chat Bot - Iniciando...
 echo -------------------------------------------

@@ -15,12 +15,15 @@ Funcionamento:
 
 import asyncio
 import json
+import os
 import re
+import shutil
 import time
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 from playwright.async_api import async_playwright, Page
@@ -37,8 +40,11 @@ RESPONDED_PATH = BASE_DIR / "responded_messages.json"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 log_file = LOG_DIR / f"bot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
+config = load_config()
+log_level = getattr(logging, config.get("settings", {}).get("log_level", "INFO").upper(), logging.INFO)
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=log_level,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler(log_file, encoding="utf-8"),
@@ -70,39 +76,52 @@ def load_config():
         return yaml.safe_load(f)
 
 
-BRAVE_PATH = r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+BROWSER_PATHS = [
+    # Brave
+    r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+    r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe",
+    # Chrome
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    # Chromium
+    r"C:\Program Files\Chromium\Application\chrome.exe",
+    r"C:\Program Files (x86)\Chromium\Application\chrome.exe",
+]
+
+
+def _find_browser() -> str | None:
+    for path in BROWSER_PATHS:
+        if os.path.isfile(path):
+            return path
+    return shutil.which("brave") or shutil.which("brave-browser") or shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("google-chrome-stable")
+
+
+BROWSER_PATH = _find_browser() or "chrome"
 
 
 class YoutubeChatBot:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict) -> None:
         self.config = config
-        self.channel = config["channel"]["name"].lstrip("@")
-        self.s = config["settings"]
-        self.rules = config["response_rules"]
-        self.default_resp = config["default_response"]
+        self.channel: str = config["channel"]["name"].lstrip("@")
+        self.s: dict = config["settings"]
+        self.rules: list[dict] = config["response_rules"]
+        self.default_resp: dict = config["default_response"]
 
-        # AI Responder
         self.ai = AIResponder(config.get("ai", {}))
-        self.ai_mode = config.get("ai", {}).get("mode", "off")
+        self.ai_mode: str = config.get("ai", {}).get("mode", "off")
 
-        # Rate-limit state
-        self._rule_cooldowns: dict = {}
+        self._rule_cooldowns: dict[str | int, float] = {}
         self._last_msg_at: float = 0.0
         self._minute_count: int = 0
         self._minute_start: float = time.time()
         self._seen: set[str] = set()
-        # Carrega mensagens já processadas em execuções anteriores (persiste entre reinícios)
         self._load_responded()
-        # Textos que o bot já enviou (evita responder a mesma mensagem de novo)
         self._sent: set[str] = set()
-        # Nome do próprio canal (detectado ao entrar no chat, para filtrar auto-mensagens)
         self._own_channel_name: str | None = None
-        # Último video_id monitorado (pra saber se trocou de live)
         self._last_video_id: str | None = None
 
     # ── PERSISTÊNCIA (mensagens já processadas sobrevivem a reinícios) ──
-    def _load_responded(self):
-        """Carrega mensagens já processadas de execuções anteriores."""
+    def _load_responded(self) -> None:
         try:
             if RESPONDED_PATH.exists():
                 data = json.loads(RESPONDED_PATH.read_text(encoding="utf-8"))
@@ -112,14 +131,12 @@ class YoutubeChatBot:
         except Exception as e:
             log.warning(f"⚠️ Erro ao carregar responded_messages.json: {e}")
 
-    def _save_responded(self):
-        """Salva mensagens processadas em disco para persistir entre reinícios."""
+    def _save_responded(self) -> None:
         try:
             RESPONDED_PATH.write_text(
                 json.dumps(list(self._seen), ensure_ascii=False, indent=2),
                 encoding="utf-8"
             )
-            log.info(f"💾 Salvas {len(self._seen)} mensagens processadas")
         except Exception as e:
             log.warning(f"⚠️ Erro ao salvar responded_messages.json: {e}")
 
@@ -136,7 +153,7 @@ class YoutubeChatBot:
             PROFILE_DIR.mkdir(parents=True, exist_ok=True)
             ctx = await pw.chromium.launch_persistent_context(
                 user_data_dir=str(PROFILE_DIR),
-                executable_path=BRAVE_PATH,
+                executable_path=BROWSER_PATH,
                 headless=self.s.get("headless", False),
                 locale=self.s.get("language", "pt"),
                 viewport={"width": 420, "height": 680},
@@ -167,7 +184,7 @@ class YoutubeChatBot:
                 await ctx.close()
 
     # ── FIND LIVE ──────────────────────────────
-    async def _find_live(self, ctx) -> str | None:
+    async def _find_live(self, ctx: Any) -> str | None:
         page = await ctx.new_page()
         try:
             url = f"https://www.youtube.com/@{self.channel}/live"
@@ -387,16 +404,17 @@ class YoutubeChatBot:
 
                 log.info(f"💬 {author}: {text}")
 
-                # Decide se e como responder (se retornar None, ainda assim marca como visto — foi SKIP da IA)
-                resp = await self._decide_response(author, text)
-                self._seen.add(key)
-                if len(self._seen) > 2000:
-                    self._seen = set(list(self._seen)[-1000:])
-                if resp:
-                    self._sent.add(text)
-                    if len(self._sent) > 500:
-                        self._sent = set(list(self._sent)[-250:])
-                    await self._send(page, resp)
+                try:
+                    resp = await self._decide_response(author, text)
+                    if resp:
+                        self._sent.add(text)
+                        if len(self._sent) > 500:
+                            self._sent = set(list(self._sent)[-250:])
+                        await self._send(page, resp)
+                finally:
+                    self._seen.add(key)
+                    if len(self._seen) > 2000:
+                        self._seen = set(list(self._seen)[-1000:])
 
             except Exception:
                 continue

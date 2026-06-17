@@ -10,12 +10,32 @@ Uso:
 """
 
 import asyncio
+import os
+import shutil
 from pathlib import Path
 from playwright.async_api import async_playwright
 
 BASE_DIR = Path(__file__).parent
 PROFILE_DIR = BASE_DIR / "browser_profile"
-BRAVE_PATH = r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
+
+BROWSER_PATHS = [
+    r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+    r"C:\Program Files (x86)\BraveSoftware\Brave-Browser\Application\brave.exe",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files\Chromium\Application\chrome.exe",
+    r"C:\Program Files (x86)\Chromium\Application\chrome.exe",
+]
+
+
+def _find_browser() -> str | None:
+    for path in BROWSER_PATHS:
+        if os.path.isfile(path):
+            return path
+    return shutil.which("brave") or shutil.which("brave-browser") or shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("google-chrome-stable")
+
+
+BROWSER_PATH = _find_browser() or "chrome"
 
 # ── ANTI-DETECTION: esconde do Google que é um navegador automatizado ──
 ANTI_DETECT_SCRIPT = """
@@ -83,7 +103,7 @@ async def main():
     async with async_playwright() as pw:
         context = await pw.chromium.launch_persistent_context(
             user_data_dir=str(PROFILE_DIR),
-            executable_path=BRAVE_PATH,
+            executable_path=BROWSER_PATH,
             headless=False,
             locale="pt",
             viewport={"width": 1280, "height": 900},

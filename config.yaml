@@ -161,3 +161,4 @@ settings:
   max_responses_per_minute: 4  # máximo de respostas por minuto
   headless: false              # true = esconder navegador, false = mostrar
   language: pt                 # idioma do YouTube
+  log_level: INFO              # DEBUG | INFO | WARNING | ERROR

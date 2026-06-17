@@ -6,6 +6,7 @@ Usa o mesmo modelo gratuito (deepseek-v4-flash-free) que roda o Hermes.
 Lê a chave de API do .env do Hermes automaticamente.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -23,21 +24,21 @@ log = logging.getLogger("youtube_chat_bot.ai")
 class AIResponder:
     """Gera respostas contextualmente autênticas para o chat usando IA."""
 
-    def __init__(self, ai_config: dict):
-        self.enabled = ai_config.get("enabled", True)
-        self.mode = ai_config.get("mode", "hybrid")  # ai | hybrid | off
-        self.model = ai_config.get("model", "deepseek-v4-flash-free")
-        self.temperature = ai_config.get("temperature", 0.9)
-        self.max_tokens = ai_config.get("max_tokens", 1000)
-        self.system_prompt = ai_config.get("system_prompt", "")
+    def __init__(self, ai_config: dict) -> None:
+        self.enabled: bool = ai_config.get("enabled", True)
+        self.mode: str = ai_config.get("mode", "hybrid")
+        self.model: str = ai_config.get("model", "deepseek-v4-flash-free")
+        self.temperature: float = ai_config.get("temperature", 0.9)
+        self.max_tokens: int = ai_config.get("max_tokens", 1000)
+        self.system_prompt: str = ai_config.get("system_prompt", "")
 
-        self.api_key = self._load_api_key()
-        self.api_url = ai_config.get(
+        self.api_key: str | None = self._load_api_key()
+        self.api_url: str = ai_config.get(
             "api_url", "https://opencode.ai/zen/v1/chat/completions"
         )
 
-        # Cache pra não repetir respostas idênticas
-        self._cache: dict[str, tuple[str, float]] = {}  # msg_hash -> (response, timestamp)
+        self._cache: dict[str, tuple[str, float]] = {}
+        self._cache_access_count: int = 0
 
         if not self.api_key:
             log.warning("⚠️  OPENCODE_ZEN_API_KEY não encontrada! IA desativada.")
@@ -45,35 +46,38 @@ class AIResponder:
 
     # ── LOAD API KEY ──────────────────────────
     def _load_api_key(self) -> str | None:
-        # 1. Tenta variável de ambiente
-        key = os.environ.get(PREFIX + SUFFIX[:-1])
+        env_var = PREFIX + SUFFIX[:-1]
+        key = os.environ.get(env_var)
         if key:
             return key
 
-        # 2. Tenta o .env do Hermes
-        try:
-            env_path = Path.home() / "AppData/Local/hermes/.env"
-            if env_path.exists():
-                search = PREFIX + SUFFIX
-                for line in env_path.read_text(encoding="utf-8").splitlines():
-                    line = line.strip()
-                    if line.startswith(search):
-                        raw = line.split("=", 1)[1].strip()
-                        raw = raw.strip('"').strip("'")
-                        if raw:
-                            return raw
-        except Exception:
-            pass
+        hermes_envs = [
+            Path.home() / "AppData/Local/hermes/.env",
+            Path.home() / ".config/hermes/.env",
+            Path.home() / ".hermes/.env",
+        ]
+
+        search = PREFIX + SUFFIX
+        for env_path in hermes_envs:
+            try:
+                if env_path.exists():
+                    for line in env_path.read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if line.startswith(search):
+                            raw = line.split("=", 1)[1].strip()
+                            raw = raw.strip('"').strip("'")
+                            if raw:
+                                return raw
+            except Exception:
+                continue
 
         return None
 
     # ── GENERATE ──────────────────────────────
     async def generate(self, author: str, message: str, keyword_match: str = "") -> str | None:
-        """Gera uma resposta via IA. Retorna None em caso de erro ou se a IA decidir não responder (SKIP)."""
         if not self.enabled:
             return None
 
-        # Cache simples: mesma mensagem + keyword = reusa por 30s
         cache_key = f"{message}|{keyword_match}"
         now = time.time()
         cached = self._cache.get(cache_key)
@@ -83,31 +87,33 @@ class AIResponder:
         try:
             response = await self._call_api(author, message, keyword_match)
             if response:
-                # Se a IA decidiu não responder, retorna None (sem cache)
                 if response.strip().upper() == "SKIP":
                     return None
-                # Atualiza cache (máx 100 itens)
                 self._cache[cache_key] = (response, now)
-                if len(self._cache) > 100:
-                    # Limpa cache velho
-                    cutoff = now - 60
-                    self._cache = {k: v for k, v in self._cache.items() if v[1] > cutoff}
+                self._cache_access_count += 1
+                if self._cache_access_count >= 50:
+                    self._cleanup_cache()
                 return response
         except Exception as e:
             log.warning(f"⚠️  Erro na IA: {e}")
 
         return None
 
+    def _cleanup_cache(self) -> None:
+        cutoff = time.time() - 120
+        self._cache = {k: v for k, v in self._cache.items() if v[1] > cutoff}
+        self._cache_access_count = 0
+        if len(self._cache) > 100:
+            sorted_items = sorted(self._cache.items(), key=lambda x: x[1][1], reverse=True)
+            self._cache = dict(sorted_items[:100])
+
     # ── API CALL ──────────────────────────────
     async def _call_api(self, author: str, message: str, keyword_match: str) -> str | None:
-        """Chama a API do OpenCode Zen (compatível com OpenAI). Tenta 2x se falhar."""
         prompts = [
-            # Tentativa 1: com system prompt completo
             [
                 {"role": "system", "content": self.system_prompt},
                 {"role": "user", "content": self._build_prompt(author, message, keyword_match)},
             ],
-            # Tentativa 2: mais curto, sem system prompt
             [
                 {"role": "user", "content": f"Responda em 1 linha e de forma natural para '{author}' que disse: {message}"}
             ],
@@ -115,7 +121,7 @@ class AIResponder:
 
         for attempt, messages in enumerate(prompts):
             if attempt > 0:
-                await asyncio.sleep(1)  # pausa curta entre tentativas
+                await asyncio.sleep(2 ** attempt)
 
             payload = json.dumps({
                 "model": self.model,
@@ -144,16 +150,14 @@ class AIResponder:
                 )
                 if result:
                     return result
-                log.debug(f"Tentativa {attempt+1} retornou vazio, tentando novamente...")
             except Exception as e:
                 log.warning(f"Tentativa {attempt+1} falhou: {e}")
 
         return None
 
     def _do_request(self, req: urllib.request.Request) -> str | None:
-        """Executa a requisição HTTP (síncrona, roda em thread)."""
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 content = data["choices"][0]["message"]["content"].strip()
                 content = content.strip('"').strip("'")
@@ -161,6 +165,8 @@ class AIResponder:
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
             log.warning(f"HTTP {e.code}: {body[:200]}")
+            if e.code in (429, 502, 503, 504):
+                raise  # for retry in _call_api
             return None
         except Exception as e:
             log.warning(f"Request error: {type(e).__name__}: {e}")
@@ -168,7 +174,6 @@ class AIResponder:
 
     # ── BUILD PROMPT ──────────────────────────
     def _build_prompt(self, author: str, message: str, keyword_match: str) -> str:
-        """Monta o prompt do usuário com a mensagem do chat."""
         if keyword_match:
             return (
                 f"O irmão(a) {author} acabou de comentar no chat ao vivo: \"{message}\"\n\n"
@@ -189,5 +194,3 @@ class AIResponder:
         )
 
 
-# Import asyncio aqui (evita circular import)
-import asyncio
