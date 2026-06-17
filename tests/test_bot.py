@@ -1,12 +1,14 @@
+import copy
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import pytest
 from youtube_chat_bot import YoutubeChatBot
 
 
-SAMPLE_CONFIG = {
+BASE_CONFIG = {
     "channel": {"name": "tviebt"},
     "ai": {
         "enabled": True,
@@ -49,52 +51,52 @@ SAMPLE_CONFIG = {
 
 
 def make_bot(**overrides):
-    cfg = dict(SAMPLE_CONFIG)
+    cfg = copy.deepcopy(BASE_CONFIG)
     cfg.update(overrides)
     return YoutubeChatBot(cfg)
 
 
+@pytest.mark.asyncio
 class TestDecideResponseOffMode:
-    def test_matched_rule_returns_response(self):
+    async def test_matched_rule_returns_response(self):
         bot = make_bot()
-        resp = bot._decide_response("Joao", "Amem")
+        resp = await bot._decide_response("Joao", "Amem")
         assert resp == "Amem! Gloria a Deus!"
 
-    def test_matched_rule_different_keyword(self):
+    async def test_matched_rule_different_keyword(self):
         bot = make_bot()
-        resp = bot._decide_response("Maria", "Bom dia")
+        resp = await bot._decide_response("Maria", "Bom dia")
         assert resp == "Bem-vindo ao culto!"
 
-    def test_no_match_returns_default(self):
+    async def test_no_match_returns_default(self):
         bot = make_bot()
-        resp = bot._decide_response("Jose", "Qual o horario?")
+        resp = await bot._decide_response("Jose", "Qual o horario?")
         assert resp == "Amem!"
 
-    def test_empty_message_returns_none(self):
+    async def test_empty_message_returns_none(self):
         bot = make_bot()
-        resp = bot._decide_response("Joao", "")
+        resp = await bot._decide_response("Joao", "")
         assert resp is None
 
-    def test_default_disabled_returns_none(self):
-        cfg = dict(SAMPLE_CONFIG)
-        cfg["default_response"]["enabled"] = False
-        bot = YoutubeChatBot(cfg)
-        resp = bot._decide_response("Jose", "Qual o horario?")
+    async def test_default_disabled_returns_none(self):
+        bot = make_bot()
+        bot.default_resp["enabled"] = False
+        resp = await bot._decide_response("Jose", "Qual o horario?")
         assert resp is None
 
 
 class TestCooldown:
     def test_cooldown_blocks_repeat(self):
         bot = make_bot()
-        resp1 = bot._apply_rule(0, SAMPLE_CONFIG["response_rules"][0])
+        resp1 = bot._apply_rule(0, BASE_CONFIG["response_rules"][0])
         assert resp1 is not None
-        resp2 = bot._apply_rule(0, SAMPLE_CONFIG["response_rules"][0])
+        resp2 = bot._apply_rule(0, BASE_CONFIG["response_rules"][0])
         assert resp2 is None
 
     def test_cooldown_expires(self):
         import time
         bot = make_bot()
-        rule = dict(SAMPLE_CONFIG["response_rules"][0])
+        rule = dict(BASE_CONFIG["response_rules"][0])
         rule["cooldown"] = 0.001
         resp1 = bot._apply_rule(0, rule)
         assert resp1 is not None
@@ -104,19 +106,27 @@ class TestCooldown:
 
     def test_different_rules_independent(self):
         bot = make_bot()
-        resp1 = bot._apply_rule(0, SAMPLE_CONFIG["response_rules"][0])
+        resp1 = bot._apply_rule(0, BASE_CONFIG["response_rules"][0])
         assert resp1 is not None
-        resp2 = bot._apply_rule(1, SAMPLE_CONFIG["response_rules"][1])
+        resp2 = bot._apply_rule(1, BASE_CONFIG["response_rules"][1])
         assert resp2 is not None
 
 
+@pytest.mark.asyncio
 class TestDecideResponseAiMode:
-    def test_ai_returns_none_if_disabled(self):
-        cfg = dict(SAMPLE_CONFIG)
-        cfg["ai"]["enabled"] = False
-        cfg["ai"]["mode"] = "ai"
-        bot = YoutubeChatBot(cfg)
-        resp = bot._decide_response("Joao", "Amem")
+    async def test_ai_disabled_falls_to_rules(self):
+        bot = make_bot()
+        bot.ai_mode = "ai"
+        bot.ai.enabled = False
+        resp = await bot._decide_response("Joao", "Amem")
+        assert resp == "Amem! Gloria a Deus!"
+
+    async def test_ai_returns_none_no_keyword_and_no_fallback(self):
+        bot = make_bot()
+        bot.ai_mode = "ai"
+        bot.ai.enabled = True
+        bot._allow_fallback = False
+        resp = await bot._decide_response("Maria", "coisa aleatoria")
         assert resp is None
 
 
@@ -127,8 +137,7 @@ class TestDefaultResponse:
         assert resp == "Amem!"
 
     def test_default_disabled(self):
-        cfg = dict(SAMPLE_CONFIG)
-        cfg["default_response"]["enabled"] = False
-        bot = YoutubeChatBot(cfg)
+        bot = make_bot()
+        bot.default_resp["enabled"] = False
         resp = bot._default_response()
         assert resp is None
