@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 
 import aiohttp
@@ -212,8 +213,22 @@ class AIResponder:
     def _build_prompt(
         self, author: str, message: str, keyword_match: str
     ) -> str:
+        now = datetime.now()
+        hora = now.hour
+        if 5 <= hora < 12:
+            periodo = "manha"
+        elif 12 <= hora < 18:
+            periodo = "tarde"
+        else:
+            periodo = "noite"
+        time_info = (
+            f"[HORARIO ATUAL DO SISTEMA: {now.strftime('%H:%M')} — "
+            f"periodo: {periodo}]"
+        )
+
         if keyword_match:
             return (
+                f'{time_info}\n'
                 f'O irmao(a) {author} acabou de comentar no chat ao vivo: '
                 f'"{message}"\n\n'
                 f"(Contexto: a mensagem e sobre '{keyword_match}')\n\n"
@@ -226,6 +241,7 @@ class AIResponder:
                 f"Se NAO for apropriado responder, retorne apenas: SKIP"
             )
         return (
+            f'{time_info}\n'
             f'O irmao(a) {author} escreveu no chat: "{message}"\n\n'
             f"Responda em 1 pessoa do plural (nos da TV IEBT), "
             f"de forma natural e acolhedora. "
