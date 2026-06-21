@@ -160,6 +160,7 @@ settings:
   check_interval: 5            # segundos entre verificações de novas mensagens
   min_response_interval: 30    # segundos mínimo entre QUALQUER resposta
   max_responses_per_minute: 2  # máximo de respostas por minuto
+  response_dedup_interval: 120 # segundos para evitar repetir a MESMA resposta
   headless: false              # true = esconder navegador, false = mostrar
   language: pt                 # idioma do YouTube
   log_level: INFO              # DEBUG | INFO | WARNING | ERROR

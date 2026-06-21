@@ -33,6 +33,7 @@ class AIResponder:
         self._pending_locks: dict[str, asyncio.Lock] = {}
         self._session: aiohttp.ClientSession | None = None
         self._semaphore = asyncio.Semaphore(5)
+        self._last_skipped: bool = False
 
         if not self.api_key:
             log.warning("OPENCODE_ZEN_API_KEY nao encontrada! IA desativada.")
@@ -105,13 +106,17 @@ class AIResponder:
                 response = await self._call_api(author, message, keyword_match)
                 if response:
                     if self._is_skip(response):
+                        self._last_skipped = True
                         return None
+                    self._last_skipped = False
                     self._cache[cache_key] = (response, now)
                     self._cache_access_count += 1
                     if self._cache_access_count >= 50:
                         self._cleanup_cache()
                     return response
+                self._last_skipped = False
             except Exception as e:
+                self._last_skipped = False
                 log.warning(f"Erro na IA: {e}")
             finally:
                 self._pending_locks.pop(cache_key, None)

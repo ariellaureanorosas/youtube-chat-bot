@@ -70,6 +70,7 @@ class YoutubeChatBot:
         self._save_interval: int = self.s.get("save_interval", 300)
         self._load_responded()
         self._sent: set[str] = set()
+        self._sent_responses: dict[str, float] = {}
         self._own_channel_name: str | None = None
         self._last_video_id: str | None = None
         self._running: bool = True
@@ -339,6 +340,7 @@ class YoutubeChatBot:
             )
         self._last_video_id = video_id
         self._sent.clear()
+        self._sent_responses.clear()
         self._rule_cooldowns.clear()
         self._last_msg_at = 0.0
         self._minute_count = 0
@@ -429,6 +431,23 @@ class YoutubeChatBot:
                 try:
                     resp = await self._decide_response(author, text)
                     if resp:
+                        dedup_secs = self.s.get("response_dedup_interval", 120)
+                        if resp in self._sent_responses:
+                            elapsed = time.time() - self._sent_responses[resp]
+                            if elapsed < dedup_secs:
+                                log.info(
+                                    f"Resposta repetida '{resp[:40]}...' "
+                                    f"enviada ha {elapsed:.0f}s, pulando"
+                                )
+                                continue
+                        self._sent_responses[resp] = time.time()
+                        if len(self._sent_responses) > 100:
+                            cutoff = time.time() - 300
+                            self._sent_responses = {
+                                k: v
+                                for k, v in self._sent_responses.items()
+                                if v > cutoff
+                            }
                         self._sent.add(text)
                         if len(self._sent) > 500:
                             self._sent = set(
@@ -474,9 +493,14 @@ class YoutubeChatBot:
             ai_resp = await self.ai.generate(author, message)
             if ai_resp:
                 return ai_resp
-            if self._allow_fallback and matched_rule:
+            if self._allow_fallback and matched_rule and not self.ai._last_skipped:
                 log.info("Fallback: IA falhou, usando regra fixa")
                 return self._apply_rule(matched_idx, matched_rule)
+            if self.ai._last_skipped:
+                log.debug(
+                    f"IA pulou intencionalmente (SKIP): "
+                    f"{author}: {message[:60]}"
+                )
             return None
 
         if self.ai_mode == "hybrid":
