@@ -4,6 +4,10 @@ REM  BUILD YouTube Chat Bot GUI - EXE
 REM ============================================
 cd /d "%~dp0"
 
+REM Mata processos stale do bot que podem travar o build
+echo Verificando processos stale do bot...
+taskkill /F /IM YouTubeChatBot.exe 2>nul && echo   -> Processo antigo encerrado. || echo   -> Nenhum processo rodando.
+
 if exist venv\Scripts\activate.bat (
     call venv\Scripts\activate.bat
 )
