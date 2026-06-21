@@ -45,9 +45,9 @@ class TrayManager:
 
         menu.addSeparator()
 
-        quit_act = QAction("Sair")
-        quit_act.triggered.connect(self._quit)
-        menu.addAction(quit_act)
+        self._quit_act = QAction("Sair")
+        self._quit_act.triggered.connect(self._quit)
+        menu.addAction(self._quit_act)
 
         self._tray.setContextMenu(menu)
         self._tray.activated.connect(self._on_activated)
@@ -78,3 +78,6 @@ class TrayManager:
         if self._bot.is_running:
             self._bot.stop()
         QApplication.quit()
+        # Forca a saida completa do processo
+        import os
+        os._exit(0)

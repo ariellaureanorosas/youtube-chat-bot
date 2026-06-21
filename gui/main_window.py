@@ -56,9 +56,9 @@ class MainWindow(QMainWindow):
         self._log_view = QPlainTextEdit()
         self._log_view.setReadOnly(True)
         self._log_view.setMaximumBlockCount(2000)
-        self._log_view.setFont(
-            self._log_view.font().family(), 10
-        )
+        f = self._log_view.font()
+        f.setPointSize(10)
+        self._log_view.setFont(f)
         log_layout.addWidget(self._log_view)
         tabs.addTab(log_widget, "Log")
 
@@ -67,9 +67,9 @@ class MainWindow(QMainWindow):
         config_layout = QVBoxLayout(config_widget)
         config_layout.setContentsMargins(0, 0, 0, 0)
         self._config_edit = QTextEdit()
-        self._config_edit.setFont(
-            self._config_edit.font().family(), 10
-        )
+        f = self._config_edit.font()
+        f.setPointSize(10)
+        self._config_edit.setFont(f)
         config_layout.addWidget(self._config_edit)
         btn_row = QHBoxLayout()
         reload_btn = QPushButton("Recarregar")

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import sys
 from pathlib import Path
 
 import yaml
@@ -8,11 +9,16 @@ from PySide6.QtCore import QObject, Signal
 
 from youtube_chat_bot import YoutubeChatBot
 
-BASE_DIR = Path(__file__).parent.parent
+if getattr(sys, 'frozen', False):
+    BASE_DIR = Path(sys.executable).parent
+    _cfg = BASE_DIR / "config.yaml"
+    if not _cfg.exists():
+        _cfg = Path(sys._MEIPASS) / "config.yaml"
+else:
+    BASE_DIR = Path(__file__).parent.parent
+    _cfg = BASE_DIR / "config.yaml"
 CONFIG_PATH = Path(
-    os.environ.get(
-        "YOUTUBE_CHAT_BOT_CONFIG", str(BASE_DIR / "config.yaml")
-    )
+    os.environ.get("YOUTUBE_CHAT_BOT_CONFIG", str(_cfg))
 )
 
 log = logging.getLogger("youtube_chat_bot")

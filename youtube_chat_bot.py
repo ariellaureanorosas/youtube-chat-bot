@@ -16,34 +16,21 @@ from playwright.async_api import async_playwright, Page
 from ai_responder import AIResponder
 from browser_utils import BROWSER_PATH, ANTI_DETECT_SCRIPT
 
-BASE_DIR = Path(__file__).parent
+if getattr(sys, 'frozen', False):
+    BASE_DIR = Path(sys.executable).parent
+    _cfg = BASE_DIR / "config.yaml"
+    if not _cfg.exists():
+        _cfg = Path(sys._MEIPASS) / "config.yaml"
+else:
+    BASE_DIR = Path(__file__).parent
+    _cfg = BASE_DIR / "config.yaml"
 CONFIG_PATH = Path(
-    os.environ.get(
-        "YOUTUBE_CHAT_BOT_CONFIG", str(BASE_DIR / "config.yaml")
-    )
+    os.environ.get("YOUTUBE_CHAT_BOT_CONFIG", str(_cfg))
 )
 PROFILE_DIR = BASE_DIR / "browser_profile"
 LOG_DIR = BASE_DIR / "logs"
 RESPONDED_PATH = BASE_DIR / "responded_messages.json"
 
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-log_file = LOG_DIR / f"bot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-
-config = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-log_level = getattr(
-    logging,
-    config.get("settings", {}).get("log_level", "INFO").upper(),
-    logging.INFO,
-)
-
-logging.basicConfig(
-    level=log_level,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
 log = logging.getLogger("youtube_chat_bot")
 
 
@@ -672,12 +659,34 @@ class YoutubeChatBot:
         log.warning("Todos os metodos de envio falharam")
 
 
+def _setup_logging(cfg: dict) -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = LOG_DIR / f"bot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    level = getattr(
+        logging,
+        cfg.get("settings", {}).get("log_level", "INFO").upper(),
+        logging.INFO,
+    )
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, encoding="utf-8"),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
+
+
 async def main() -> None:
-    bot = YoutubeChatBot(config)
+    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    _setup_logging(cfg)
+    bot = YoutubeChatBot(cfg)
     try:
         await bot.run()
     except KeyboardInterrupt:
         log.info("Bot parado pelo usuario.")
+    finally:
+        logging.shutdown()
 
 
 if __name__ == "__main__":

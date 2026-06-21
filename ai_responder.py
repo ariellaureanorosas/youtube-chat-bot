@@ -39,6 +39,18 @@ class AIResponder:
             log.warning("OPENCODE_ZEN_API_KEY nao encontrada! IA desativada.")
             self.enabled = False
 
+    def __del__(self) -> None:
+        if self._session is not None and not self._session.closed:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self._session.close())
+                else:
+                    loop.run_until_complete(self._session.close())
+            except Exception:
+                pass
+
     def _load_api_key(self) -> str | None:
         env_var = PREFIX + SUFFIX[:-1]
         key = os.environ.get(env_var)
