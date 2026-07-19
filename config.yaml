@@ -164,6 +164,27 @@ default_response:
 # CONFIGURAÇÕES GERAIS
 # =============================================================================
 
+# =============================================================================
+# INTEGRAÇÃO OBS STUDIO — Inicia/para o bot automaticamente com a transmissão
+# =============================================================================
+# Com essa integração, o bot só começa a monitorar o chat quando o OBS
+# iniciar a transmissão ao vivo. Quando o OBS parar, o bot para também.
+# Útil quando o operador do OBS esquece de ligar o bot manualmente.
+#
+# obs:
+#   enabled: true    → usa OBS (espera sinal de streaming)
+#   enabled: false   → modo original (polling YouTube a cada 30s)
+#
+# Configure a senha no OBS:
+#   OBS Studio → Ferramentas → WebSocket Server Settings
+#
+obs:
+  enabled: false               # mude para true após configurar o OBS
+  host: "localhost"             # endereço do OBS (quase sempre localhost)
+  port: 4455                   # porta (a mesma do WebSocket no OBS)
+  password: ""                 # senha configurada no OBS (deixe "" se não tiver)
+  poll_interval: 2             # segundos entre verificações de streaming
+
 settings:
   check_interval: 5            # segundos entre verificações de novas mensagens
   min_response_interval: 30    # segundos mínimo entre QUALQUER resposta

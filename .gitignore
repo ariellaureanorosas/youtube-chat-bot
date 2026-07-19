@@ -11,6 +11,10 @@ browser_profile/
 logs/
 *.log
 
+# Build artifacts
+dist/
+*.spec
+
 # Outros
 nul
 yt_status.png
