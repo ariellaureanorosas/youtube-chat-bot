@@ -38,6 +38,7 @@ pyinstaller --onefile --console --name "YouTubeChatBot-OBS" ^
     --add-data "yt_status.png;." ^
     --collect-all playwright ^
     --collect-all aiohttp ^
+    --hidden-import obs_tray ^
     obs_bot.py
 
 echo.

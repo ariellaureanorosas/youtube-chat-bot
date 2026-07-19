@@ -23,6 +23,7 @@ from typing import Any
 import yaml
 
 from obs_monitor import OBSMonitor
+from obs_tray import OBSIconTray
 from youtube_chat_bot import YoutubeChatBot, _setup_logging, CONFIG_PATH
 
 log = logging.getLogger("obs_bot")
@@ -31,8 +32,9 @@ log = logging.getLogger("obs_bot")
 class OBSBotLauncher:
     """Orquestra o bot de acordo com o status do OBS Studio."""
 
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, no_tray: bool = False) -> None:
         self.config = config
+        self._loop = asyncio.get_running_loop()
 
         # Config do OBS
         obs_cfg = config.get("obs", {})
@@ -50,6 +52,22 @@ class OBSBotLauncher:
         self._bot: YoutubeChatBot | None = None
         self._bot_task: asyncio.Task | None = None
         self._running: bool = True
+
+        # ── Ícone na bandeja (opcional) ──
+        self._no_tray = no_tray
+        self._tray: OBSIconTray | None = None
+        if not no_tray:
+            self._tray = OBSIconTray(
+                on_start=self._tray_start_bot,
+                on_stop=self._tray_stop_bot,
+                on_quit=self._tray_quit,
+            )
+            self._tray.start_thread()
+
+    def _tray_update(self, status: str) -> None:
+        """Atualiza ícone da bandeja se existir."""
+        if self._tray:
+            self._tray.update_status(status)
 
     # -----------------------------------------------------------------
     # API pública
@@ -72,6 +90,7 @@ class OBSBotLauncher:
         if force_no_obs or not self._obs_enabled:
             # ── Modo autônomo (polling YouTube) ──
             log.info("Rodando em modo autônomo (polling YouTube a cada 30s)...")
+            self._tray_update("▶ Rodando (polling YouTube)")
             bot = YoutubeChatBot(self.config)
             try:
                 await bot.run()
@@ -89,6 +108,7 @@ class OBSBotLauncher:
                 "  OBS Studio → Ferramentas → WebSocket Server Settings\n"
                 "Rodando em modo autônomo como fallback..."
             )
+            self._tray_update("⚠ OBS offline — fallback polling")
             bot = YoutubeChatBot(self.config)
             try:
                 await bot.run()
@@ -101,7 +121,10 @@ class OBSBotLauncher:
 
         if self._obs.is_streaming:
             log.info("📡 OBS já está transmitindo — iniciando bot imediatamente!")
+            self._tray_update("🔴 Transmitindo — bot ativo")
             await self._on_stream_started()
+        else:
+            self._tray_update("⏸ Aguardando transmissão...")
 
         log.info("📡 Aguardando sinal do OBS... (Ctrl+C para parar)")
 
@@ -114,12 +137,41 @@ class OBSBotLauncher:
             log.info("Encerrando...")
 
     async def shutdown(self) -> None:
-        """Desliga tudo: bot, monitor OBS e conexões."""
+        """Desliga tudo: bot, monitor OBS, ícone da bandeja e conexões."""
         log.info("Desligando...")
         self._running = False
         await self._stop_bot()
         await self._obs.stop_monitoring()
         self._obs.disconnect()
+        if self._tray:
+            self._tray.stop()
+
+    # -----------------------------------------------------------------
+    # Ações do ícone da bandeja
+    # -----------------------------------------------------------------
+
+    def _tray_start_bot(self) -> None:
+        """Inicia o bot manualmente via bandeja."""
+        log.info("🖱 Iniciado manualmente pela bandeja")
+        if self._obs.is_connected and self._obs.is_streaming:
+            # Dispara na event loop principal
+            asyncio.run_coroutine_threadsafe(
+                self._on_stream_started(), self._loop
+            )
+
+    def _tray_stop_bot(self) -> None:
+        """Para o bot manualmente via bandeja."""
+        log.info("🖱 Parado manualmente pela bandeja")
+        asyncio.run_coroutine_threadsafe(
+            self._on_stream_stopped(), self._loop
+        )
+
+    def _tray_quit(self) -> None:
+        """Sai da aplicação via bandeja."""
+        log.info("🖱 Saindo pela bandeja...")
+        asyncio.run_coroutine_threadsafe(
+            self.shutdown(), self._loop
+        )
 
     # -----------------------------------------------------------------
     # Callbacks do OBS
@@ -131,11 +183,13 @@ class OBSBotLauncher:
             log.info("Bot já está rodando.")
             return
         log.info("📡 OBS transmitindo — iniciando bot...")
+        self._tray_update("🔴 Bot iniciado")
         self._bot_task = asyncio.create_task(self._run_bot())
 
     async def _on_stream_stopped(self) -> None:
         """OBS parou de transmitir → para o bot."""
         log.info("📡 OBS parou — parando bot...")
+        self._tray_update("⏸ Transmissão encerrada — bot parado")
         await self._stop_bot()
 
     # -----------------------------------------------------------------
@@ -195,6 +249,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Ignora configuração OBS e roda em modo polling YouTube",
     )
+    parser.add_argument(
+        "--no-tray",
+        action="store_true",
+        help="Não exibe ícone na bandeja do sistema",
+    )
     return parser.parse_args()
 
 
@@ -203,7 +262,7 @@ async def main() -> None:
     cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
     _setup_logging(cfg)
 
-    launcher = OBSBotLauncher(cfg)
+    launcher = OBSBotLauncher(cfg, no_tray=args.no_tray)
     try:
         await launcher.run(force_no_obs=args.no_obs)
     except KeyboardInterrupt:
