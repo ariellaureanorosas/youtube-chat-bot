@@ -179,10 +179,10 @@ default_response:
 #   OBS Studio → Ferramentas → WebSocket Server Settings
 #
 obs:
-  enabled: false               # mude para true após configurar o OBS
+  enabled: true                # mude para true após configurar o OBS
   host: "localhost"             # endereço do OBS (quase sempre localhost)
   port: 4455                   # porta (a mesma do WebSocket no OBS)
-  password: ""                 # senha configurada no OBS (deixe "" se não tiver)
+  password: "123456"           # senha configurada no OBS (deixe "" se não tiver)
   poll_interval: 2             # segundos entre verificações de streaming
 
 settings:
