@@ -53,8 +53,19 @@ class TrayManager:
         self._tray.activated.connect(self._on_activated)
         self._tray.show()
 
+    def update_obs_status(self, status: str):
+        labels = {
+            "conectado": "OBS Conectado",
+            "transmitindo": "OBS Transmitindo",
+            "offline": "OBS Offline",
+            "desligado": "",
+        }
+        obs_part = labels.get(status, "")
+        if obs_part:
+            self._tray.setToolTip(f"YouTube Chat Bot - TV IEBT ({obs_part})")
+
     def update_status(self, status: str):
-        if status in ("rodando", "live_detectada"):
+        if status in ("rodando", "live_detectada", "rodando (OBS)", "rodando (fallback)"):
             self._toggle_act.setText("Parar Bot")
         else:
             self._toggle_act.setText("Iniciar Bot")
