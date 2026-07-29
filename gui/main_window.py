@@ -37,11 +37,16 @@ class MainWindow(QMainWindow):
         self._status_label.setStyleSheet(
             "font-weight: bold; font-size: 14px; padding: 4px;"
         )
+        self._obs_label = QLabel("")
+        self._obs_label.setStyleSheet(
+            "font-size: 12px; padding: 4px; color: gray;"
+        )
         self._toggle_btn = QPushButton("Iniciar Bot")
         self._toggle_btn.setMinimumWidth(120)
         self._toggle_btn.clicked.connect(self._toggle_bot)
 
         header.addWidget(self._status_label)
+        header.addWidget(self._obs_label)
         header.addStretch()
         header.addWidget(self._toggle_btn)
         layout.addLayout(header)
@@ -92,9 +97,23 @@ class MainWindow(QMainWindow):
             self._bot.start()
             self._toggle_btn.setText("Parar Bot")
 
+    def update_obs_status(self, status: str):
+        labels = {
+            "conectado": ("OBS: Conectado", "color: green;"),
+            "transmitindo": ("OBS: Transmitindo", "color: #22c55e; font-weight: bold;"),
+            "offline": ("OBS: Offline (fallback manual)", "color: orange;"),
+            "desligado": ("", ""),
+        }
+        text, style = labels.get(status, (f"OBS: {status}", ""))
+        self._obs_label.setText(text)
+        self._obs_label.setStyleSheet("font-size: 12px; padding: 4px;" + style)
+
     def update_status(self, status: str):
         labels = {
             "rodando": ("Status: Rodando", "color: green;"),
+            "rodando (fallback)": ("Status: Rodando (fallback OBS)", "color: orange;"),
+            "rodando (OBS)": ("Status: Rodando (OBS)", "color: #22c55e;"),
+            "aguardando transmissão...": ("Status: Aguardando transmissão OBS", "color: #3b82f6;"),
             "parado": ("Status: Parado", "color: gray;"),
             "erro": ("Status: Erro", "color: red;"),
             "live_detectada": ("Status: Live Detectada", "color: blue;"),

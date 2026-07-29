@@ -1,19 +1,19 @@
 @echo off
 REM ============================================
 REM  INICIAR BOT DO YOUTUBE COM OBS
-REM  Inicia/para automaticamente com a transmissão
+REM  Forca modo OBS (inicia/para com a transmissao)
 REM ============================================
 cd /d "%~dp0"
 if exist venv\Scripts\activate.bat (
     call venv\Scripts\activate.bat
 )
 echo -------------------------------------------
-echo  YouTube Chat Bot - Modo OBS
+echo  YouTube Chat Bot - Modo OBS (forcado)
 echo  Inicia e para automaticamente com o OBS
 echo -------------------------------------------
 echo.
-echo  Se nao quiser o modo OBS, use:
-echo    python obs_bot.py --no-obs
+echo  Dica: para alternar, edite config.yaml
+echo    ou remova a flag --obs deste script
 echo.
-python obs_bot.py
+python gui_main.py --obs
 pause

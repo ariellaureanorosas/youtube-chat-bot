@@ -1,6 +1,8 @@
 @echo off
 REM ============================================
-REM  BUILD YouTube Chat Bot GUI - EXE
+REM  BUILD YouTube Chat Bot - EXE UNIFICADO
+REM  Gera um unico executavel com suporte
+REM  a modo manual e OBS (configuravel via config.yaml)
 REM ============================================
 cd /d "%~dp0"
 
@@ -17,7 +19,7 @@ pip install pyinstaller
 
 echo.
 echo ============================================
-echo  BUILD 1/2 — GUI (YouTubeChatBot.exe)
+echo  BUILD — YouTubeChatBot.exe (GUI Unificada)
 echo ============================================
 pyinstaller --onefile --windowed --name "YouTubeChatBot" ^
     --add-data "gui;gui" ^
@@ -27,33 +29,20 @@ pyinstaller --onefile --windowed --name "YouTubeChatBot" ^
     --collect-all aiohttp ^
     --hidden-import PySide6.QtNetwork ^
     --hidden-import qasync ^
+    --hidden-import obsws_python ^
+    --hidden-import pystray ^
+    --hidden-import PIL._tkinter_finder ^
     gui_main.py
 
 echo.
-echo ============================================
-echo  BUILD 2/2 — OBS Launcher (YouTubeChatBot-OBS.exe)
-echo ============================================
-pyinstaller --onefile --console --name "YouTubeChatBot-OBS" ^
-    --add-data "config.yaml;." ^
-    --add-data "yt_status.png;." ^
-    --collect-all playwright ^
-    --collect-all aiohttp ^
-    --hidden-import obs_tray ^
-    obs_bot.py
-
-echo.
-echo Limpando arquivos temporarios...
-if exist build rmdir /s /q build
-if exist *.spec del /q *.spec
-
-echo.
-echo Copiando config.yaml para junto dos executaveis...
+echo Copiando config.yaml para junto do executavel...
 copy /Y config.yaml dist\config.yaml
 
 echo.
 echo ============================================
 echo  PRONTO!
-echo    dist\YouTubeChatBot.exe     (GUI — modo normal)
-echo    dist\YouTubeChatBot-OBS.exe (Console — modo OBS)
+echo    dist\YouTubeChatBot.exe  (GUI Unificada)
+echo  Use --obs para forçar modo OBS, ou
+echo  configure obs.enabled no config.yaml
 echo ============================================
 pause
