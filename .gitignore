@@ -15,6 +15,9 @@ logs/
 dist/
 *.spec
 
+# Config (contém senhas/chaves)
+config.yaml
+
 # Outros
 nul
 yt_status.png
