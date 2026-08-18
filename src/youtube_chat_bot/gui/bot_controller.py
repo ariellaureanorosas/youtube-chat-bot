@@ -1,32 +1,13 @@
 import asyncio
 import logging
-import os
-import sys
-from pathlib import Path
 
-import yaml
 from PySide6.QtCore import QObject, Signal
 
-from obs_monitor import OBSMonitor
-from youtube_chat_bot import YoutubeChatBot
-
-if getattr(sys, 'frozen', False):
-    BASE_DIR = Path(sys.executable).parent
-    _cfg = BASE_DIR / "config.yaml"
-    if not _cfg.exists():
-        _cfg = Path(sys._MEIPASS) / "config.yaml"
-else:
-    BASE_DIR = Path(__file__).parent.parent
-    _cfg = BASE_DIR / "config.yaml"
-CONFIG_PATH = Path(
-    os.environ.get("YOUTUBE_CHAT_BOT_CONFIG", str(_cfg))
-)
+from youtube_chat_bot.bot import YoutubeChatBot
+from youtube_chat_bot.config import load_config
+from youtube_chat_bot.obs.monitor import OBSMonitor
 
 log = logging.getLogger("youtube_chat_bot")
-
-
-def load_config() -> dict:
-    return yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
 
 class BotController(QObject):

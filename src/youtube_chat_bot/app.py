@@ -5,14 +5,14 @@ YouTube Chat Bot - Interface Grafica Unificada
 Inicia o bot com interface grafica e icone na bandeja do sistema.
 
 Modos:
-  - Manual:  usa youtube_chat_bot.py diretamente (polling YouTube)
+  - Manual:  usa bot.py diretamente (polling YouTube)
   - OBS:     integrado ao OBS Studio, inicia/para com a transmissao
              (configurado em config.yaml -> obs.enabled)
 
 Uso:
-    python gui_main.py                # modo definido pelo config.yaml
-    python gui_main.py --obs          # força modo OBS (mesmo se desligado no config)
-    python gui_main.py --no-window    # inicia minimizado direto
+    python -m youtube_chat_bot            # modo definido pelo config.yaml
+    python -m youtube_chat_bot --obs      # força modo OBS (mesmo se desligado no config)
+    python -m youtube_chat_bot --no-window  # inicia minimizado direto
 
 Comportamento da bandeja:
   - Inicia minimizado (so o icone na bandeja)
@@ -28,10 +28,11 @@ import sys
 
 from qasync import QApplication, QEventLoop
 
-from gui.bot_controller import BotController, load_config
-from gui.log_handler import QtLogHandler
-from gui.main_window import MainWindow
-from gui.tray_manager import TrayManager
+from youtube_chat_bot.config import load_config
+from youtube_chat_bot.gui.bot_controller import BotController
+from youtube_chat_bot.gui.log_handler import QtLogHandler
+from youtube_chat_bot.gui.main_window import MainWindow
+from youtube_chat_bot.gui.tray_manager import TrayManager
 
 
 def parse_args() -> argparse.Namespace:

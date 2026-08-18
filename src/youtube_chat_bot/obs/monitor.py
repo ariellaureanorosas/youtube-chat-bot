@@ -19,9 +19,9 @@ Uso:
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Coroutine, Any
+from typing import Any, Callable, Coroutine
 
-log = logging.getLogger("obs_monitor")
+log = logging.getLogger("youtube_chat_bot.obs")
 
 
 class OBSMonitor:
@@ -91,7 +91,7 @@ class OBSMonitor:
             self._streaming = bool(status.output_active)
             log.info(
                 "Status do streaming: "
-                f"{'🔴 AO VIVO' if self._streaming else '⏸️ DESLIGADO'}"
+                f"{'AO VIVO' if self._streaming else 'DESLIGADO'}"
             )
 
             self._connected = True
@@ -158,11 +158,11 @@ class OBSMonitor:
                 if curr != prev:
                     self._streaming = curr
                     if curr:
-                        log.info("📡 OBS INICIOU a transmissão!")
+                        log.info("OBS INICIOU a transmissão!")
                         if self.on_stream_started:
                             await self.on_stream_started()
                     else:
-                        log.info("📡 OBS PAROU a transmissão.")
+                        log.info("OBS PAROU a transmissão.")
                         if self.on_stream_stopped:
                             await self.on_stream_stopped()
                 prev = curr

@@ -28,28 +28,29 @@ conforme a transmissao ao vivo do OBS Studio — tudo em um unico aplicativo.
 
 ```
 youtube-chat-bot/
-  gui_main.py               Entry point unico (GUI + OBS)
-  youtube_chat_bot.py       Bot principal (assincrono)
-  ai_responder.py           Integracao com IA (Deepseek / OpenCode Zen)
-  browser_utils.py          Deteccao do navegador e script anti-deteccao
-  login_helper.py           Login no Google/YouTube
-  obs_monitor.py            Monitor OBS WebSocket (streaming start/stop)
-  obs_bot.py                Wrapper para modo OBS (delega para gui_main.py)
-  gui/
-    __init__.py
-    bot_controller.py       Controla o bot + integracao OBS
-    main_window.py          Janela principal (log + config + status OBS)
-    tray_manager.py         Icone na bandeja do sistema (PySide6)
-    log_handler.py          Redireciona logs para a interface
-  config.yaml               Configuracoes
-  build_exe.bat             Script para compilar o .exe unico
-  iniciar_bot.bat           Atalho pra iniciar o bot (modo definido no config)
-  iniciar_bot_obs.bat       Atalho pra iniciar com modo OBS forcado
-  requirements.txt          Dependencias Python
-  tests/                    Testes unitarios
-  dist/                     Executavel compilado (.exe)
-  browser_profile/          Sessao do navegador (login salvo)
-  logs/                     Logs das execucoes
+  src/youtube_chat_bot/
+    __main__.py               Entry point: python -m youtube_chat_bot
+    app.py                    Aplicacao GUI (janela + bandeja + OBS)
+    bot.py                    Bot principal (assincrono)
+    ai_responder.py           Integracao com IA (Deepseek / OpenCode Zen)
+    browser_utils.py          Deteccao do navegador e script anti-deteccao
+    config.py                 Caminhos (config, perfil, logs) + load_config
+    login.py                  Login no Google/YouTube
+    gui/
+      bot_controller.py       Controla o bot + integracao OBS
+      main_window.py          Janela principal (log + config + status OBS)
+      tray_manager.py         Icone na bandeja do sistema (PySide6)
+      log_handler.py          Redireciona logs para a interface
+    obs/
+      monitor.py              Monitor OBS WebSocket (streaming start/stop)
+  scripts/
+    build_exe.bat             Script para compilar o .exe unico
+    iniciar_bot.bat           Atalho pra iniciar o bot (modo definido no config)
+    iniciar_bot_obs.bat       Atalho pra iniciar com modo OBS forcado
+  tests/                      Testes unitarios
+  pyproject.toml              Configuracao do projeto (instalacao, testes)
+  config.yaml.example         Template seguro de configuracao
+  requirements.txt            Dependencias Python
 ```
 
 ## Como usar
@@ -58,6 +59,7 @@ youtube-chat-bot/
 
 ```bash
 pip install -r requirements.txt
+pip install -e .              # instala o pacote (entry points + python -m)
 playwright install chromium
 ```
 
@@ -78,7 +80,7 @@ OPENCODE_ZEN_API_KEY=sua_chave_aqui
 ### 3. Fazer login
 
 ```bash
-python login_helper.py
+python -m youtube_chat_bot.login
 ```
 
 Isso abre o navegador na pagina de login do Google. Faca login e feche a janela.
@@ -91,7 +93,7 @@ A sessao fica salva em `browser_profile/`.
 Clique duas vezes em `dist/YouTubeChatBot.exe` ou execute:
 
 ```bash
-python gui_main.py
+python -m youtube_chat_bot
 ```
 
 O icone aparece na bandeja do sistema (perto do relogio) e a janela abre
@@ -125,19 +127,19 @@ Se o OBS nao estiver disponivel, cai em modo fallback (polling YouTube).
 Para forcar o modo OBS independente do config:
 
 ```bash
-python gui_main.py --obs
+python -m youtube_chat_bot --obs
 ```
 
 Para iniciar sem mostrar a janela (so bandeja):
 
 ```bash
-python gui_main.py --no-window
+python -m youtube_chat_bot --no-window
 ```
 
 **Modo console (caso prefira):**
 
 ```bash
-python youtube_chat_bot.py
+python -m youtube_chat_bot.bot
 ```
 
 ### 5. Configurar
@@ -177,7 +179,7 @@ obs:
 ### 7. Compilar .exe (para distribuir)
 
 ```bash
-build_exe.bat
+scripts\build_exe.bat
 ```
 
 Gera um unico executavel em `dist/`:
@@ -199,8 +201,6 @@ O system prompt no `config.yaml` define a personalidade do bot. Por padrao:
 python -m pytest tests/ -v
 ```
 
-39 testes passando, 2 skipped (dependentes de API key real).
-
 ## Solucao de Problemas
 
 **O bot nao encontra o navegador:**
@@ -217,6 +217,11 @@ set BROWSER_PATH=C:\caminho\do\seu\navegador.exe
 
 **O chat para de responder:**
 O bot tem reconexao automatica (ate 3 tentativas). Verifique os logs.
+
+**Aparece uma aba "about:blank" e depois a live:**
+O bot reutiliza uma unica aba do navegador para checar e monitorar a live.
+Se ainda vir abas brancas, verifique se ha outra instancia do bot rodando
+(abra o Gerenciador de Tarefas e encerre `YouTubeChatBot.exe` ou `python`).
 
 **A janela nao abre:**
 O app inicia com a janela visivel por padrao. Se usou `--no-window`,

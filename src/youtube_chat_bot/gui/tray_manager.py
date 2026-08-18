@@ -1,9 +1,8 @@
-from PySide6.QtCore import QTimer
 from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from gui.bot_controller import BotController
-from gui.main_window import MainWindow
+from youtube_chat_bot.gui.bot_controller import BotController
+from youtube_chat_bot.gui.main_window import MainWindow
 
 
 def _make_icon() -> QIcon:

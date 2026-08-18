@@ -1,9 +1,4 @@
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from browser_utils import find_browser, ANTI_DETECT_SCRIPT, BROWSER_PATH
+from youtube_chat_bot.browser_utils import ANTI_DETECT_SCRIPT, BROWSER_PATH, find_browser
 
 
 def test_find_browser_returns_string():

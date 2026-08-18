@@ -2,34 +2,24 @@
 import asyncio
 import json
 import logging
-import os
 import re
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import yaml
 from playwright.async_api import async_playwright, Page
 
-from ai_responder import AIResponder
-from browser_utils import BROWSER_PATH, ANTI_DETECT_SCRIPT
-
-if getattr(sys, 'frozen', False):
-    BASE_DIR = Path(sys.executable).parent
-    _cfg = BASE_DIR / "config.yaml"
-    if not _cfg.exists():
-        _cfg = Path(sys._MEIPASS) / "config.yaml"
-else:
-    BASE_DIR = Path(__file__).parent
-    _cfg = BASE_DIR / "config.yaml"
-CONFIG_PATH = Path(
-    os.environ.get("YOUTUBE_CHAT_BOT_CONFIG", str(_cfg))
+from youtube_chat_bot.ai_responder import AIResponder
+from youtube_chat_bot.browser_utils import BROWSER_PATH, ANTI_DETECT_SCRIPT
+from youtube_chat_bot.config import (
+    CONFIG_PATH,
+    LOG_DIR,
+    PROFILE_DIR,
+    RESPONDED_PATH,
+    load_config,
 )
-PROFILE_DIR = BASE_DIR / "browser_profile"
-LOG_DIR = BASE_DIR / "logs"
-RESPONDED_PATH = BASE_DIR / "responded_messages.json"
 
 log = logging.getLogger("youtube_chat_bot")
 
@@ -118,12 +108,15 @@ class YoutubeChatBot:
             )
             await ctx.add_init_script(ANTI_DETECT_SCRIPT)
 
+            # Uma unica aba reutilizada: evita recriar paginas
+            # (e piscar "about:blank") a cada ciclo de verificacao.
+            page = await ctx.new_page()
             try:
                 while self._running:
-                    video_id = await self._find_live(ctx)
+                    video_id = await self._find_live(page)
                     if video_id:
                         log.info(f"AO VIVO! ID: {video_id}")
-                        await self._monitor_chat_with_retry(ctx, video_id)
+                        await self._monitor_chat_with_retry(page, video_id)
                         log.info("Stream encerrada.")
                     else:
                         log.info(
@@ -134,11 +127,11 @@ class YoutubeChatBot:
             except KeyboardInterrupt:
                 log.info("Bot parado pelo usuario.")
             finally:
+                await page.close()
                 await self.ai.close()
                 await ctx.close()
 
-    async def _find_live(self, ctx: Any) -> str | None:
-        page = await ctx.new_page()
+    async def _find_live(self, page: Page) -> str | None:
         try:
             url = f"https://www.youtube.com/@{self.channel}/live"
             log.info(f"Checando {url}")
@@ -232,16 +225,14 @@ class YoutubeChatBot:
         except Exception as exc:
             log.warning(f"Erro ao checar live: {exc}")
             return None
-        finally:
-            await page.close()
 
     async def _monitor_chat_with_retry(
-        self, ctx: Any, video_id: str
+        self, page: Page, video_id: str
     ) -> None:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                await self._monitor_chat(ctx, video_id)
+                await self._monitor_chat(page, video_id)
                 return
             except Exception as e:
                 log.warning(
@@ -297,13 +288,12 @@ class YoutubeChatBot:
             log.debug(f"Detecao de canal: {e}")
 
     async def _monitor_chat(
-        self, ctx: Any, video_id: str
+        self, page: Page, video_id: str
     ) -> None:
         chat_url = (
             f"https://www.youtube.com/live_chat"
             f"?is_popout=1&v={video_id}"
         )
-        page = await ctx.new_page()
         await page.goto(
             chat_url, wait_until="domcontentloaded", timeout=20_000
         )
@@ -349,7 +339,6 @@ class YoutubeChatBot:
             raise
         finally:
             self._save_responded()
-            await page.close()
 
     async def _poll_messages(self, page: Page) -> None:
         if not self._own_channel_name:
@@ -678,7 +667,7 @@ def _setup_logging(cfg: dict) -> None:
 
 
 async def main() -> None:
-    cfg = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    cfg = load_config()
     _setup_logging(cfg)
     bot = YoutubeChatBot(cfg)
     try:

@@ -1,11 +1,7 @@
-import os
-import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
 import pytest
-from ai_responder import AIResponder
+from youtube_chat_bot.ai_responder import AIResponder
 
 
 def make_responder(**overrides):
