@@ -4,7 +4,7 @@ REM  BUILD YouTube Chat Bot - EXE UNIFICADO
 REM  Gera um unico executavel com suporte
 REM  a modo manual e OBS (configuravel via config.yaml)
 REM ============================================
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 
 REM Mata processos stale do bot que podem travar o build
 echo Verificando processos stale do bot...
@@ -22,17 +22,14 @@ echo ============================================
 echo  BUILD — YouTubeChatBot.exe (GUI Unificada)
 echo ============================================
 pyinstaller --onefile --windowed --name "YouTubeChatBot" ^
-    --add-data "gui;gui" ^
+    --paths src ^
     --add-data "config.yaml;." ^
-    --add-data "yt_status.png;." ^
     --collect-all playwright ^
     --collect-all aiohttp ^
     --hidden-import PySide6.QtNetwork ^
     --hidden-import qasync ^
     --hidden-import obsws_python ^
-    --hidden-import pystray ^
-    --hidden-import PIL._tkinter_finder ^
-    gui_main.py
+    src\youtube_chat_bot\__main__.py
 
 echo.
 echo Copiando config.yaml para junto do executavel...
@@ -42,7 +39,7 @@ echo.
 echo ============================================
 echo  PRONTO!
 echo    dist\YouTubeChatBot.exe  (GUI Unificada)
-echo  Use --obs para forçar modo OBS, ou
+echo  Use --obs para forcar modo OBS, ou
 echo  configure obs.enabled no config.yaml
 echo ============================================
 pause

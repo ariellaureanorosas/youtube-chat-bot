@@ -1,11 +1,7 @@
 import copy
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from youtube_chat_bot import YoutubeChatBot
+from youtube_chat_bot.bot import YoutubeChatBot
 
 
 BASE_CONFIG = {

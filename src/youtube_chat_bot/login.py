@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 import asyncio
-from pathlib import Path
 
 from playwright.async_api import async_playwright
 
-from browser_utils import BROWSER_PATH, ANTI_DETECT_SCRIPT
-
-BASE_DIR = Path(__file__).parent
-PROFILE_DIR = BASE_DIR / "browser_profile"
+from youtube_chat_bot.browser_utils import BROWSER_PATH, ANTI_DETECT_SCRIPT
+from youtube_chat_bot.config import PROFILE_DIR
 
 
 async def main():

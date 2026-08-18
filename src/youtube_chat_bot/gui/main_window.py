@@ -12,7 +12,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from gui.bot_controller import CONFIG_PATH, BotController
+from youtube_chat_bot.config import CONFIG_PATH
+from youtube_chat_bot.gui.bot_controller import BotController
 
 
 class MainWindow(QMainWindow):

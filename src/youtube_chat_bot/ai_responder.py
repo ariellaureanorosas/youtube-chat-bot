@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import asyncio
-import json
 import logging
 import os
 import re
@@ -43,7 +42,6 @@ class AIResponder:
     def __del__(self) -> None:
         if self._session is not None and not self._session.closed:
             try:
-                import asyncio
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     loop.create_task(self._session.close())
@@ -62,7 +60,7 @@ class AIResponder:
             Path.home() / "AppData/Local/hermes/.env",
             Path.home() / ".config/hermes/.env",
             Path.home() / ".hermes/.env",
-            Path(__file__).parent / ".env",
+            Path(__file__).parent.parent.parent / ".env",
         ]
 
         search = PREFIX + SUFFIX
