@@ -10,6 +10,8 @@ estados auxiliares de sessão. Mantém o bot desacoplado de I/O em disco.
 import json
 import logging
 import time
+
+__all__ = ["MessageStore"]
 from pathlib import Path
 
 log = logging.getLogger("youtube_chat_bot")

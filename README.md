@@ -31,8 +31,11 @@ youtube-chat-bot/
   src/youtube_chat_bot/
     __main__.py               Entry point: python -m youtube_chat_bot
     app.py                    Aplicacao GUI (janela + bandeja + OBS)
-    bot.py                    Bot principal (assincrono)
-    ai_responder.py           Integracao com IA (NVIDIA / OpenCode Zen)
+    bot.py                    Orquestrador principal (thin controller)
+    ai_responder.py           Integracao com IA (NVIDIA / OpenAI-compat)
+    response_router.py        Decisao de resposta (descarte, intencoes, regras)
+    storage.py                Persistencia de mensagens processadas
+    live_chat.py              Interacao com o YouTube (Playwright/DOM)
     browser_utils.py          Deteccao do navegador e script anti-deteccao
     config.py                 Caminhos (config, perfil, logs) + load_config
     login.py                  Login no Google/YouTube
@@ -52,6 +55,21 @@ youtube-chat-bot/
   config.yaml.example         Template seguro de configuracao
   requirements.txt            Dependencias Python
 ```
+
+### Arquitetura (Clean Architecture simplificada)
+
+O `bot.py` e um orquestrador fino (~300 linhas) que delega responsabilidades
+a modulos especializados:
+
+- **`ResponseRouter`** — decide o que responder: descarte, modo puro, regras,
+  deteccao de perguntas biblicas/horarios, cooldowns. Nao depende de I/O.
+- **`MessageStore`** — persiste o historico de mensagens ja respondidas em disco.
+  Enapsula leitura/escrita do `responded_messages.json`.
+- **`LiveChatClient`** — toda a interacao com o browser via Playwright:
+  navegar ate a live, abrir chat pop-out, detectar canal proprio, extrair
+  mensagens do DOM e enviar respostas visuais/JS.
+- **`AIResponder`** — integracao com a API NVIDIA/OpenAI-compativel.
+  Trata retries, parsing e limpeza de respostas do modelo.
 
 ## Como usar
 

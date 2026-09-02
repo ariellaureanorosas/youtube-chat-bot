@@ -14,6 +14,8 @@ import time
 
 from youtube_chat_bot.ai_responder import AIResponder
 
+__all__ = ["ResponseRouter"]
+
 log = logging.getLogger("youtube_chat_bot")
 
 

@@ -13,6 +13,8 @@ import logging
 import re
 from typing import Any
 
+__all__ = ["LiveChatClient"]
+
 from playwright.async_api import Page
 
 log = logging.getLogger("youtube_chat_bot")
