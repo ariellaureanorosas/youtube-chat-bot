@@ -11,7 +11,6 @@ persistência) — isso fica a cargo do orquestrador (YoutubeChatBot).
 import asyncio
 import logging
 import re
-from typing import Any
 
 __all__ = ["LiveChatClient"]
 
