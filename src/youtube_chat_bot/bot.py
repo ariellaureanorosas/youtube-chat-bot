@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import asyncio
-import json
 import logging
 import re
 import sys
@@ -21,6 +20,7 @@ from youtube_chat_bot.config import (
     load_config,
 )
 from youtube_chat_bot.response_router import ResponseRouter
+from youtube_chat_bot.storage import MessageStore
 
 log = logging.getLogger("youtube_chat_bot")
 
@@ -65,10 +65,10 @@ class YoutubeChatBot:
         self._last_msg_at: float = 0.0
         self._minute_count: int = 0
         self._minute_start: float = time.time()
-        self._seen: set[str] = set()
-        self._last_save: float = time.time()
+        self.store = MessageStore(RESPONDED_PATH)
+        self.store.load()
+        self._last_save: float = self.store.last_save
         self._save_interval: int = self.s.get("save_interval", 300)
-        self._load_responded()
         self._sent: set[str] = set()
         self._sent_responses: dict[str, float] = {}
         self._own_channel_name: str | None = None
@@ -76,27 +76,12 @@ class YoutubeChatBot:
         self._running: bool = True
 
     def _load_responded(self) -> None:
-        try:
-            if RESPONDED_PATH.exists():
-                data = json.loads(RESPONDED_PATH.read_text(encoding="utf-8"))
-                if isinstance(data, list):
-                    self._seen = set(data)
-                    log.info(
-                        f"Carregadas {len(self._seen)} mensagens "
-                        f"ja processadas"
-                    )
-        except Exception as e:
-            log.warning(f"Erro ao carregar responded_messages.json: {e}")
+        self.store.load()
+        self._last_save = self.store.last_save
 
     def _save_responded(self) -> None:
-        try:
-            RESPONDED_PATH.write_text(
-                json.dumps(list(self._seen), ensure_ascii=False),
-                encoding="utf-8",
-            )
-            self._last_save = time.time()
-        except Exception as e:
-            log.warning(f"Erro ao salvar responded_messages.json: {e}")
+        self.store.save()
+        self._last_save = self.store.last_save
 
     async def run(self) -> None:
         log.info("=" * 58)
@@ -331,17 +316,17 @@ class YoutubeChatBot:
             )
 
         if video_id != self._last_video_id:
-            self._seen.clear()
+            self.store.seen.clear()
             log.info("Live nova, limpando historico de mensagens")
         else:
             log.info(
                 f"Mesma live, mantendo "
-                f"{len(self._seen)} mensagens no historico"
+                f"{len(self.store.seen)} mensagens no historico"
             )
         self._last_video_id = video_id
         self._sent.clear()
         self._sent_responses.clear()
-        self._rule_cooldowns.clear()
+        self.router._rule_cooldowns.clear()
         self._last_msg_at = 0.0
         self._minute_count = 0
         self._minute_start = time.time()
@@ -406,7 +391,7 @@ class YoutubeChatBot:
                     continue
 
                 key = f"{author}|{text}"
-                if key in self._seen:
+                if key in self.store.seen:
                     continue
 
                 # Rate limit centralizado AQUI
@@ -456,11 +441,7 @@ class YoutubeChatBot:
                         self._last_msg_at = time.time()
                         self._minute_count += 1
                 finally:
-                    self._seen.add(key)
-                    if len(self._seen) > 2000:
-                        self._seen = set(
-                            list(self._seen)[-1000:]
-                        )
+                    self.store.add(key)
 
             except Exception:
                 continue
