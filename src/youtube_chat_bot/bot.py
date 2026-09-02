@@ -83,6 +83,10 @@ class YoutubeChatBot:
         self.store.save()
         self._last_save = self.store.last_save
 
+    def stop(self) -> None:
+        """Solicita parada graciosa do bot (pode ser chamado de qualquer thread)."""
+        self._running = False
+
     async def run(self) -> None:
         log.info("=" * 58)
         log.info("  YOUTUBE LIVE CHAT BOT")
