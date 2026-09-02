@@ -14,6 +14,14 @@ BASE_CONFIG = {
         "max_tokens": 100,
         "system_prompt": "",
         "fallback_to_rules": True,
+        "culto_horarios": [
+            "Quarta-feira - 19:30",
+            "Domingo (manha) - 10:00",
+            "Domingo (noite) - 18:00",
+        ],
+        "resposta_pergunta_biblica": (
+            "Essa e uma otima pergunta! Procure nossa equipe pastoral na igreja."
+        ),
     },
     "response_rules": [
         {
@@ -110,18 +118,24 @@ class TestCooldown:
 
 @pytest.mark.asyncio
 class TestDecideResponseAiMode:
-    async def test_ai_disabled_falls_to_rules(self):
+    async def test_ai_disabled_returns_none_no_fallback(self):
         bot = make_bot()
         bot.ai_mode = "ai"
         bot.ai.enabled = False
         resp = await bot._decide_response("Joao", "Amem")
-        assert resp == "Amem! Gloria a Deus!"
+        assert resp is None
+
+    async def test_ai_disabled_no_keyword_returns_none(self):
+        bot = make_bot()
+        bot.ai_mode = "ai"
+        bot.ai.enabled = False
+        resp = await bot._decide_response("Joao", "coisa aleatoria")
+        assert resp is None
 
     async def test_ai_returns_none_no_keyword_and_no_fallback(self):
         bot = make_bot()
         bot.ai_mode = "ai"
         bot.ai.enabled = True
-        bot._allow_fallback = False
         resp = await bot._decide_response("Maria", "coisa aleatoria")
         assert resp is None
 
@@ -137,3 +151,139 @@ class TestDefaultResponse:
         bot.default_resp["enabled"] = False
         resp = bot._default_response()
         assert resp is None
+
+
+class TestShouldDiscard:
+    def test_empty(self):
+        assert YoutubeChatBot._should_discard("") is True
+
+    def test_risada_kkk(self):
+        assert YoutubeChatBot._should_discard("kkkkkkkkkkk") is True
+
+    def test_risada_haha(self):
+        assert YoutubeChatBot._should_discard("hahaha") is True
+
+    def test_risada_rs(self):
+        assert YoutubeChatBot._should_discard("rsrsrs") is True
+
+    def test_apenas_pontuacao(self):
+        assert YoutubeChatBot._should_discard("!!!") is True
+
+    def test_apenas_emoji_repetido(self):
+        assert YoutubeChatBot._should_discard("😂😂😂") is True
+
+    def test_mensagem_normal(self):
+        assert YoutubeChatBot._should_discard("gloria a deus") is False
+
+    def test_pergunta_normal(self):
+        assert YoutubeChatBot._should_discard("qual o horario?") is False
+
+
+class TestIsBibleQuestion:
+    def test_pergunta_versiculo(self):
+        bot = make_bot()
+        assert bot._is_bible_question("qual versiculo fala sobre amor?") is True
+
+    def test_pergunta_salmo(self):
+        bot = make_bot()
+        assert bot._is_bible_question("me indique um salmo de esperanca") is True
+
+    def test_pergunta_jesus(self):
+        bot = make_bot()
+        assert bot._is_bible_question("o que jesus disse sobre orar?") is True
+
+    def test_pergunta_onde_esta_escrito(self):
+        bot = make_bot()
+        assert bot._is_bible_question("onde esta escrito que deus e amor?") is True
+
+    def test_mencao_deus_sem_pergunta_biblica(self):
+        bot = make_bot()
+        assert bot._is_bible_question("gloria a deus") is False
+
+    def test_horario_nao_confunde(self):
+        bot = make_bot()
+        assert bot._is_bible_question("qual o horario do culto?") is False
+
+    def test_saudacao_nao_confunde(self):
+        bot = make_bot()
+        assert bot._is_bible_question("boa noite, como voces estao?") is False
+
+
+@pytest.mark.asyncio
+class TestBibleQuestionResponse:
+    async def test_bible_question_returns_institutional_response(self):
+        bot = make_bot()
+        bot.ai_mode = "ai"
+        bot.ai.enabled = True
+        resp = await bot._decide_response(
+            "Joao", "qual versiculo fala sobre perdao?"
+        )
+        assert resp == bot.resposta_biblica
+
+    async def test_custom_bible_response(self):
+        bot = make_bot()
+        bot.ai_mode = "ai"
+        bot.ai.enabled = True
+        bot.resposta_biblica = "Texto personalizado"
+        resp = await bot._decide_response("Joao", "qual salmo ler hoje?")
+        assert resp == "Texto personalizado"
+
+
+class TestIsHorarioQuestion:
+    def test_pergunta_horario(self):
+        bot = make_bot()
+        assert bot._is_horario_question("qual o horario do culto?") is True
+
+    def test_pergunta_que_horas(self):
+        bot = make_bot()
+        assert bot._is_horario_question("que horas comeca o culto?") is True
+
+    def test_pergunta_que_dia_tem_culto(self):
+        bot = make_bot()
+        assert bot._is_horario_question("que dia tem culto na semana?") is True
+
+    def test_horario_palavra_sola(self):
+        bot = make_bot()
+        assert bot._is_horario_question("me informa o horario") is True
+
+    def test_saudacao_nao_confunde(self):
+        bot = make_bot()
+        assert bot._is_horario_question("boa noite, como voces estao?") is False
+
+    def test_biblica_nao_confunde(self):
+        bot = make_bot()
+        assert bot._is_horario_question("qual versiculo fala sobre amor?") is False
+
+
+@pytest.mark.asyncio
+class TestHorarioQuestionResponse:
+    async def test_horario_question_returns_official_response(self):
+        bot = make_bot()
+        bot.ai_mode = "ai"
+        bot.ai.enabled = True
+        resp = await bot._decide_response("Bia", "que horas comeca o culto?")
+        assert "19:30" in resp
+        assert "18:00" in resp
+        assert "10:00" in resp
+
+    async def test_horario_response_built_from_config(self):
+        bot = make_bot()
+        assert "Quarta-feira - 19:30" in bot.resposta_horario
+        assert "Domingo (manha) - 10:00" in bot.resposta_horario
+        assert "Domingo (noite) - 18:00" in bot.resposta_horario
+
+    async def test_horario_question_does_not_hit_ai(self):
+        bot = make_bot()
+        bot.ai_mode = "ai"
+        bot.ai.enabled = True
+        called = False
+
+        async def fake_generate(author, message, kw=""):
+            nonlocal called
+            called = True
+            return "NAO DEVERIA SER CHAMADO"
+
+        bot.ai.generate = fake_generate
+        resp = await bot._decide_response("Bia", "que horas comeca o culto?")
+        assert called is False
+        assert resp == bot.resposta_horario

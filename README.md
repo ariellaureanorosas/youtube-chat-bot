@@ -2,7 +2,7 @@
 
 Bot de chat ao vivo para YouTube que responde automaticamente as mensagens dos
 espectadores durante as lives. Usa **Playwright** para automacao do chat e
-**Deepseek** (via API OpenCode Zen) para gerar respostas naturais e variadas.
+**IA (via API NVIDIA / OpenCode Zen)** para gerar respostas naturais e variadas.
 
 Inclui **interface grafica com icone na bandeja do sistema** para controle
 facilitado do bot, e **modo OBS integrado** que inicia/para automaticamente
@@ -10,7 +10,7 @@ conforme a transmissao ao vivo do OBS Studio — tudo em um unico aplicativo.
 
 ## Funcionalidades
 
-- Respostas inteligentes com IA (Deepseek) — variadas e naturais
+- Respostas inteligentes com IA — variadas e naturais
 - Modos: IA total, hibrido (keywords + IA), ou regras fixas
 - **Integracao OBS Studio** — inicia e para o bot com a transmissao ao vivo
 - Interface grafica com icone na bandeja do sistema (Windows)
@@ -32,7 +32,7 @@ youtube-chat-bot/
     __main__.py               Entry point: python -m youtube_chat_bot
     app.py                    Aplicacao GUI (janela + bandeja + OBS)
     bot.py                    Bot principal (assincrono)
-    ai_responder.py           Integracao com IA (Deepseek / OpenCode Zen)
+    ai_responder.py           Integracao com IA (NVIDIA / OpenCode Zen)
     browser_utils.py          Deteccao do navegador e script anti-deteccao
     config.py                 Caminhos (config, perfil, logs) + load_config
     login.py                  Login no Google/YouTube
@@ -65,17 +65,21 @@ playwright install chromium
 
 ### 2. Configurar API Key
 
-Defina a variavel de ambiente:
+Defina a variavel de ambiente (NVIDIA ou OpenCode Zen):
 
 ```bash
-set OPENCODE_ZEN_API_KEY=sua_chave_aqui
+set NVIDIA_API_KEY=sua_chave_aqui
 ```
 
 Ou crie um arquivo `.env` na raiz do projeto:
 
 ```
-OPENCODE_ZEN_API_KEY=sua_chave_aqui
+NVIDIA_API_KEY=sua_chave_aqui
 ```
+
+> A chave `NVIDIA_API_KEY` tambem pode ser configurada diretamente em
+> `config.yaml` -> `ai.api_key` (a `api_key` do config tem prioridade sobre
+> a variavel de ambiente e o `.env`).
 
 ### 3. Fazer login
 
@@ -153,9 +157,21 @@ channel:
 ai:
   enabled: true
   mode: ai                  # ai | hybrid | off
-  model: deepseek-v4-flash-free
-  fallback_to_rules: true   # fallback para regras se IA falhar
+  model: poolside/laguna-xs-2.1
+  api_url: https://integrate.api.nvidia.com/v1/chat/completions
+  # Horarios REAIS dos cultos — o bot so responde com estes horarios
+  culto_horarios:
+    - "Quarta-feira - 19:30"
+    - "Domingo (manha) - 10:00"
+    - "Domingo (noite) - 18:00"
+  # Resposta (sem IA) para perguntas de conteudo biblico/doutrinario
+  resposta_pergunta_biblica: "Essa e uma otima pergunta! Procure nossa equipe pastoral na igreja. Deus abencoe! :pray:"
 ```
+
+> No modo `ai` NAO ha fallback para as regras fixas — se a IA nao responder
+> (SKIP ou falha), nada e postado. As perguntas de **horario** e de
+> **conteudo biblico** sao respondidas de forma deterministica (sem depender
+> do modelo), evitando que a IA invente horarios ou versiculos.
 
 ### 6. Configurar OBS Studio (opcional)
 
@@ -211,7 +227,7 @@ set BROWSER_PATH=C:\caminho\do\seu\navegador.exe
 ```
 
 **A IA nao responde:**
-- Verifique se `OPENCODE_ZEN_API_KEY` esta configurada
+- Verifique se `NVIDIA_API_KEY` esta configurada (no `.env`, variavel de ambiente ou `ai.api_key` no `config.yaml`)
 - Verifique os logs em `logs/`
 - Em modo `ai` sem fallback, o bot fica quieto se a API cair
 
@@ -232,7 +248,7 @@ o icone fica so na bandeja — clique em "Abrir" para mostrar a janela.
 - Python 3.11+
 - Playwright (automacao de navegador)
 - aiohttp (cliente HTTP async)
-- Deepseek via API OpenCode Zen
+- IA via API NVIDIA / OpenCode Zen
 - PySide6 (interface grafica)
 - qasync (event loop async + Qt)
 - obsws-python (conexao OBS WebSocket)

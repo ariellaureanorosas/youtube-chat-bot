@@ -9,8 +9,8 @@ from pathlib import Path
 
 import aiohttp
 
-PREFIX = "OPENCODE_ZEN_API"
-SUFFIX = "_KEY="
+ENV_VAR_NAMES = ["NVIDIA_API_KEY", "OPENCODE_ZEN_API_KEY"]
+ENV_FILE_SEARCH = "API_KEY="
 
 log = logging.getLogger("youtube_chat_bot.ai")
 
@@ -23,9 +23,15 @@ class AIResponder:
         self.max_tokens: int = ai_config.get("max_tokens", 1000)
         self.system_prompt: str = ai_config.get("system_prompt", "")
 
-        self.api_key: str | None = self._load_api_key()
+        horarios = ai_config.get("culto_horarios") or []
+        self.culto_horarios: list[str] = [str(h) for h in horarios if str(h).strip()]
+
+        self.api_key: str | None = self._load_api_key(
+            ai_config.get("api_key") or ""
+        )
         self.api_url: str = ai_config.get(
-            "api_url", "https://opencode.ai/zen/v1/chat/completions"
+            "api_url",
+            "https://integrate.api.nvidia.com/v1/chat/completions",
         )
 
         self._cache: dict[str, tuple[str, float]] = {}
@@ -50,11 +56,15 @@ class AIResponder:
             except Exception:
                 pass
 
-    def _load_api_key(self) -> str | None:
-        env_var = PREFIX + SUFFIX[:-1]
-        key = os.environ.get(env_var)
-        if key:
-            return key
+    def _load_api_key(self, config_key: str = "") -> str | None:
+        config_key = config_key.strip().strip('"').strip("'")
+        if config_key:
+            return config_key
+
+        for env_var in ENV_VAR_NAMES:
+            key = os.environ.get(env_var)
+            if key and key.strip():
+                return key.strip()
 
         env_paths = [
             Path.home() / "AppData/Local/hermes/.env",
@@ -63,17 +73,21 @@ class AIResponder:
             Path(__file__).parent.parent.parent / ".env",
         ]
 
-        search = PREFIX + SUFFIX
         for env_path in env_paths:
             try:
                 if env_path.exists():
                     for line in env_path.read_text(encoding="utf-8").splitlines():
                         line = line.strip()
-                        if line.startswith(search):
-                            raw = line.split("=", 1)[1].strip()
-                            raw = raw.strip('"').strip("'")
-                            if raw:
-                                return raw
+                        if not line or line.startswith("#"):
+                            continue
+                        if "=" not in line:
+                            continue
+                        name, _, value = line.partition("=")
+                        if name.strip() not in ENV_VAR_NAMES:
+                            continue
+                        raw = value.strip().strip('"').strip("'")
+                        if raw:
+                            return raw
             except Exception:
                 continue
 
@@ -151,6 +165,8 @@ class AIResponder:
     async def _call_api(
         self, author: str, message: str, keyword_match: str
     ) -> str | None:
+        # Usa o prompt COMPLETO (system + contexto) como primeira opcao e
+        # repete com backoff crescente para tolerar 503/limitacao do provedor.
         prompts = [
             [
                 {"role": "system", "content": self.system_prompt},
@@ -169,44 +185,88 @@ class AIResponder:
                 }
             ],
         ]
+        # Tenta o prompt completo ate 3x, depois cai para o prompt generico.
+        backoff = [2, 5, 12]
 
         async with self._semaphore:
-            for attempt, messages in enumerate(prompts):
+            for attempt in range(3):
+                messages = prompts[0]
+                temperature = self.temperature
                 if attempt > 0:
-                    await asyncio.sleep(2**attempt)
+                    await asyncio.sleep(backoff[attempt - 1])
+                resp = await self._post(messages, temperature)
+                if resp is not None:
+                    return resp
+                log.warning(
+                    f"IA nao respondeu no prompt completo, "
+                    f"tentativa {attempt + 1}"
+                )
 
-                payload = {
-                    "model": self.model,
-                    "messages": messages,
-                    "temperature": self.temperature if attempt == 0 else 0.5,
-                    "max_tokens": self.max_tokens,
-                }
+            # Ultimo recurso: prompt generico sem system prompt.
+            await asyncio.sleep(2)
+            return await self._post(prompts[1], 0.5)
 
-                try:
-                    session = await self._get_session()
-                    async with session.post(
-                        self.api_url,
-                        json=payload,
-                        headers={"Authorization": f"Bearer {self.api_key}"},
-                        timeout=aiohttp.ClientTimeout(total=30),
-                    ) as resp:
-                        if resp.status in (429,) or resp.status >= 500:
-                            log.warning(
-                                f"HTTP {resp.status}, tentativa {attempt + 1}"
-                            )
-                            if attempt < len(prompts) - 1:
-                                continue
-                            return None
+    async def _post(
+        self, messages: list, temperature: float
+    ) -> str | None:
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": self.max_tokens,
+        }
+        try:
+            session = await self._get_session()
+            async with session.post(
+                self.api_url,
+                json=payload,
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=aiohttp.ClientTimeout(total=45),
+            ) as resp:
+                if resp.status in (429,) or resp.status >= 500:
+                    log.warning(f"HTTP {resp.status} do provedor de IA")
+                    return None
+                data = await resp.json()
+                content = data["choices"][0]["message"]["content"].strip()
+                content = self._clean_response(content)
+                return content if content else None
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            log.warning(f"Falha no provedor de IA: {e}")
+            return None
 
-                        data = await resp.json()
-                        content = data["choices"][0]["message"]["content"].strip()
-                        content = content.strip('"').strip("'")
-                        return content if content else None
-
-                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                    log.warning(f"Tentativa {attempt + 1} falhou: {e}")
-
-        return None
+    @staticmethod
+    def _clean_response(content: str) -> str:
+        if not content:
+            return content
+        # O poolside/laguna costuma despejar VARIAS versoes de resposta
+        # empilhadas, separadas por linhas em branco, com cabecalhos entre
+        # colchetes e prefixos como "response". Trocamos o conteudo por
+        # blocos e escolhemos o bloco de resposta mais rico.
+        blocks = re.split(
+            r"\n\s*\n+|\s+response(?=\S)",
+            content.strip(),
+        )
+        cleaned_blocks = []
+        for block in blocks:
+            block = block.strip()
+            if not block:
+                continue
+            # Remove prefixo "response" grudado no inicio (ex: "responseBom dia").
+            block = re.sub(r"^response(?=\S)", "", block, flags=re.IGNORECASE)
+            # Descarta/remove anotacoes entre colchetes no inicio
+            # (ex: "[Bom dia! Nos da TV IEBT ]", "[RESPOSTA DADA]").
+            block = re.sub(r"^\[[^\]]*\]\s*", "", block).strip()
+            if not block:
+                continue
+            cleaned_blocks.append(block)
+        if not cleaned_blocks:
+            return ""
+        # Prefere o bloco mais longo (resposta mais completa/coesa).
+        best = max(cleaned_blocks, key=lambda b: len(b))
+        # Limpeza final contra duplicacoes residuais do tipo
+        # "resposta.\n responseMesma resposta" que escapam do split.
+        best = re.split(r"\s+response(?=\S)", best)[0]
+        return best.strip().strip('"').strip("'").strip()
 
     def _build_prompt(
         self, author: str, message: str, keyword_match: str
@@ -223,31 +283,39 @@ class AIResponder:
             f"[HORARIO ATUAL DO SISTEMA: {now.strftime('%H:%M')} — "
             f"periodo: {periodo}]"
         )
+        culto_info = ""
+        if self.culto_horarios:
+            culto_info = (
+                "\nHORÁRIOS OFICIAIS DOS CULTOS DA TV IEBT: "
+                + "; ".join(self.culto_horarios)
+                + ".\n"
+                "NUNCA informe um horário que não esteja nesta lista. "
+                "Se o dia tiver mais de um culto, cite todos. "
+                "Se nao der para saber o dia, liste todos oficialmente."
+            )
+
+        prompt_sufixo = (
+            "Responda em 1 pessoa do plural (nos da TV IEBT), "
+            "de forma natural, acolhedora e variada. "
+            f"Mencione o nome '{author}' na resposta se for uma "
+            "mensagem individual. "
+            "Se for uma saudacao geral para o chat, "
+            "nao precisa citar nome. "
+            "Se NAO for apropriado responder, retorne apenas: SKIP"
+        )
 
         if keyword_match:
             return (
-                f'{time_info}\n'
+                f'{time_info}{culto_info}\n'
                 f'O irmao(a) {author} acabou de comentar no chat ao vivo: '
                 f'"{message}"\n\n'
                 f"(Contexto: a mensagem e sobre '{keyword_match}')\n\n"
-                f"Responda em 1 pessoa do plural (nos da TV IEBT), "
-                f"de forma natural, acolhedora e variada. "
-                f"Mencione o nome '{author}' na resposta se for uma "
-                f"mensagem individual. "
-                f"Se for uma saudacao geral para o chat, "
-                f"nao precisa citar nome. "
-                f"Se NAO for apropriado responder, retorne apenas: SKIP"
+                f"{prompt_sufixo}"
             )
         return (
-            f'{time_info}\n'
+            f'{time_info}{culto_info}\n'
             f'O irmao(a) {author} escreveu no chat: "{message}"\n\n'
-            f"Responda em 1 pessoa do plural (nos da TV IEBT), "
-            f"de forma natural e acolhedora. "
-            f"Mencione o nome '{author}' na resposta se for uma "
-            f"mensagem individual. "
-            f"Se for uma saudacao geral para o chat, "
-            f"nao precisa citar nome. "
-            f"Se NAO for apropriado responder, retorne apenas: SKIP"
+            f"{prompt_sufixo}"
         )
 
     async def close(self) -> None:

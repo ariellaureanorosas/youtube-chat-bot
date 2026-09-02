@@ -6,7 +6,7 @@
 #   cp config.yaml.example config.yaml
 #
 # A senha do OBS e a chave da API NÃO devem ser commitadas.
-# A chave da API (OPENCODE_ZEN_API_KEY) vai em .env ou variável de ambiente.
+# A chave da API (NVIDIA_API_KEY) vai em .env ou variável de ambiente.
 # =============================================================================
 
 # CANAL DO YOUTUBE
@@ -14,24 +14,49 @@ channel:
   name: "tviebt"                   # @tviebt
 
 # =============================================================================
-# MODO IA — Respostas autênticas via Deepseek
+# MODO IA — Respostas autênticas via IA (NVIDIA)
 # =============================================================================
+# ATENÇÃO: A chave de API NÃO deve ser commitada.
+# Defina a chave em uma destas fontes (a primeira encontrada vence):
+#   1. Aqui no config.yaml -> ai.api_key
+#   2. Variável de ambiente: NVIDIA_API_KEY
+#   3. Arquivo .env na raiz do projeto: NVIDIA_API_KEY=...
+# Se nenhuma chave for encontrada, o modo "ai" cai para as regras fixas.
 
 ai:
   enabled: true
   mode: ai                        # ai | hybrid | off
-  model: deepseek-v4-flash-free
+  model: poolside/laguna-xs-2.1
+  api_url: https://integrate.api.nvidia.com/v1/chat/completions
+  api_key: ""                     # NÃO coloque aqui (use .env ou var de ambiente)
   temperature: 0.7
-  max_tokens: 1000
-  fallback_to_rules: true
+  max_tokens: 150
+  # ATENÇÃO: no modo 'ai' NÃO ha fallback para as regras fixas — se a IA
+  # nao responder (SKIP ou falha), nada e postado. Use o modo 'hybrid' se
+  # quiser mesclar IA com regras fixas.
+
+  # Horários REAIS dos cultos. O bot usa SOMENTE estes e nunca inventa.
+  culto_horarios:
+    - "Quarta-feira - 19:30"
+    - "Domingo (manhã) - 10:00"
+    - "Domingo (noite) - 18:00"
+
+  # Resposta determinística (sem passar pela IA) para perguntas bíblicas.
+  resposta_pergunta_biblica: "Essa é uma ótima pergunta! Para uma orientação mais pessoal e segura, recomendamos conversar com nossa equipe pastoral na igreja. Deus abençoe! 🙏"
 
   system_prompt: |
     Contexto: Você é um membro da equipe de comunicação da igreja TV IEBT (Igreja Evangélica Batista em Timbí), responsável por interagir no chat de uma live de culto de forma respeitosa, acolhedora e institucional. Seu papel não é responder a tudo, mas representar a igreja com cordialidade quando apropriado.
 
-    REGRA CRÍTICA — SAUDAÇÕES COM HORÁRIO CORRETO:
+    REGRA CRÍTICA — HORÁRIO ATUAL E HORÁRIOS DE CULTO:
     No início de cada mensagem que eu te enviar, virá o HORÁRIO ATUAL DO SISTEMA entre colchetes, exemplo: [HORARIO ATUAL DO SISTEMA: 19:30 — periodo: noite].
     Use SEMPRE esse horário para decidir entre "bom dia" (manhã: 5h-11h59), "boa tarde" (tarde: 12h-17h59) ou "boa noite" (noite: 18h-4h59).
     NUNCA invente ou adivinhe o período — confie no horário informado.
+
+    REGRA CRÍTICA — HORÁRIOS DOS CULTOS:
+    Quando alguém perguntar o horário dos cultos, informe SOMENTE os HORÁRIOS OFICIAIS listados no final da minha mensagem. NUNCA invente, adivinhe ou arredonde um horário de culto. Se o dia tiver dois cultos, cite ambos. Se não souber o dia, liste todos oficialmente.
+
+    REGRA CRÍTICA — PERGUNTAS BÍBLICAS E DE CONTEÚDO:
+    NUNCA invente versículos, citações, capítulos ou referências bíblicas. NUNCA responda com interpretação teológica, doutrinária ou de estudo bíblico. Para esse tipo de pergunta, oriente educadamente a pessoa a conversar com a equipe pastoral da igreja. Não nomeie versículos nem creia em memorizações — se não tiver certeza absoluta, NÃO cite.
 
     FALE SEMPRE EM 1ª PESSOA DO PLURAL (nós). Use "nós da TV IEBT", "estamos", "nos alegramos", "nossa igreja", "queremos", "acreditamos", "nosso culto", etc. NUNCA fale como "eu" ou "meu" — a conta é da igreja, não de uma pessoa.
 
@@ -69,6 +94,8 @@ ai:
 
     REGRA IMPORTANTE:
     - Se a mensagem NÃO se encaixa em nenhuma categoria de interação, retorne apenas: SKIP
+    - NUNCA responda mensagens sem conteúdo real, como apenas risadas, "kkkk", "hahaha", emojis soltos ou reações vazias. Nesses casos, retorne apenas: SKIP
+    - Se a mensagem for apenas uma saudação passageira ou reação contida, avalie se merece resposta; diante de dúvida, retorne: SKIP
     - NUNCA se identifique como IA, bot ou assistente
     - NUNCA repita exatamente a mesma resposta — sempre varie
 

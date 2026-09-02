@@ -41,6 +41,41 @@ class TestAIResponderInit:
         r = make_responder(temperature=0.5)
         assert r.temperature == 0.5
 
+    def test_api_key_from_config(self):
+        r = make_responder(api_key="chave-do-config")
+        assert r.api_key == "chave-do-config"
+
+    def test_api_key_from_config_trumps_env(self):
+        import os
+        os.environ["NVIDIA_API_KEY"] = "chave-da-env"
+        try:
+            r = make_responder(api_key="chave-do-config")
+            assert r.api_key == "chave-do-config"
+        finally:
+            os.environ.pop("NVIDIA_API_KEY", None)
+
+    def test_api_url_defaults_to_nvidia(self):
+        r = make_responder()
+        assert r.api_url == "https://integrate.api.nvidia.com/v1/chat/completions"
+
+    def test_api_url_from_config(self):
+        r = make_responder(api_url="https://example.com/v1")
+        assert r.api_url == "https://example.com/v1"
+
+    def test_culto_horarios_from_config(self):
+        r = make_responder(
+            culto_horarios=["Quarta - 19:30", "Domingo (manha) - 10:00"]
+        )
+        assert r.culto_horarios == ["Quarta - 19:30", "Domingo (manha) - 10:00"]
+
+    def test_culto_horarios_empty_default(self):
+        r = make_responder()
+        assert r.culto_horarios == []
+
+    def test_culto_horarios_filters_blanks(self):
+        r = make_responder(culto_horarios=["Quarta - 19:30", "", "  "])
+        assert r.culto_horarios == ["Quarta - 19:30"]
+
 
 class TestBuildPrompt:
     def test_with_keyword(self):
@@ -62,6 +97,20 @@ class TestBuildPrompt:
         r = make_responder()
         prompt = r._build_prompt("", "Ola", "")
         assert "SKIP" in prompt
+
+    def test_injects_culto_horarios(self):
+        r = make_responder(
+            culto_horarios=["Quarta - 19:30", "Domingo (noite) - 18:00"]
+        )
+        prompt = r._build_prompt("Joao", "Qual o horario?", "horario")
+        assert "OFICIAIS" in prompt
+        assert "Quarta - 19:30" in prompt
+        assert "Domingo (noite) - 18:00" in prompt
+
+    def test_culto_horarios_absent_when_empty(self):
+        r = make_responder()
+        prompt = r._build_prompt("Maria", "Ola", "")
+        assert "OFICIAIS" not in prompt
 
 
 class TestIsSkip:
@@ -91,6 +140,60 @@ class TestIsSkip:
 
     def test_skip_with_spaces(self):
         assert AIResponder._is_skip("  SKIP  ") is True
+
+
+class TestCleanResponse:
+    def test_removes_trailing_bracket_annotation(self):
+        out = AIResponder._clean_response(
+            "Bom dia, Maria! Que Deus abençoe. 🙏\n\n[Resposta apropriada]"
+        )
+        assert out == "Bom dia, Maria! Que Deus abençoe. 🙏"
+
+    def test_removes_response_prefix(self):
+        out = AIResponder._clean_response("responseBom dia, Maria!")
+        assert out == "Bom dia, Maria!"
+
+    def test_removes_annotation_and_duplicate(self):
+        out = AIResponder._clean_response(
+            "Bom dia, Maria! 🙏\n\n[Resposta apropriada - geral]\n"
+            "responseBom dia, Maria! 🙏"
+        )
+        assert out == "Bom dia, Maria! 🙏"
+
+    def test_keeps_normal_response(self):
+        out = AIResponder._clean_response("Bom dia, Maria! 🙏")
+        assert out == "Bom dia, Maria! 🙏"
+
+    def test_empty(self):
+        assert AIResponder._clean_response("") == ""
+
+    def test_multiblock_picks_richest(self):
+        out = AIResponder._clean_response(
+            "[Bom dia! Nos da TV IEBT ]\n\n"
+            "Marcia, que bom saber que a palavra de Deus esta tocando "
+            "seu coracao. 🙏\n\n"
+            "responseBom dia! Nos da TV IEBT acreditamos que a Palavra "
+            "de Deus e viva e poderosa, e e uma bencao poder ouvi-la. "
+            "Que o Senhor continue guiando cada um de voces! 🙏"
+        )
+        assert "acreditamos que a Palavra" in out
+        assert "Nos da TV IEBT acreditamos" in out
+
+    def test_residual_response_duplicate_removed(self):
+        out = AIResponder._clean_response(
+            "Que bom ter voce conosco. Que Deus o abencoe tambem por ai. 🙏\n"
+            "responseQue bom ter voce conosco. Que Deus o abencoe tambem por ai. 🙏"
+        )
+        assert "\n response" not in out
+        assert "Que bom ter voce conosco. Que Deus o abencoe tambem por ai" in out
+
+    def test_residual_response_duplicate_same_line(self):
+        out = AIResponder._clean_response(
+            "Nosso culto comeca as 9h. Esperamos voce conosco! ✝️\n"
+            "responseNosso culto comeca as 9h. Esperamos voce conosco! ✝️"
+        )
+        assert "\n response" not in out
+        assert out == "Nosso culto comeca as 9h. Esperamos voce conosco! ✝️"
 
 
 class TestCleanupCache:
