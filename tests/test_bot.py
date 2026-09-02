@@ -221,10 +221,11 @@ class TestBibleQuestionResponse:
         assert resp == bot.resposta_biblica
 
     async def test_custom_bible_response(self):
-        bot = make_bot()
+        cfg = copy.deepcopy(BASE_CONFIG)
+        cfg["ai"]["resposta_pergunta_biblica"] = "Texto personalizado"
+        bot = YoutubeChatBot(cfg)
         bot.ai_mode = "ai"
         bot.ai.enabled = True
-        bot.resposta_biblica = "Texto personalizado"
         resp = await bot._decide_response("Joao", "qual salmo ler hoje?")
         assert resp == "Texto personalizado"
 
