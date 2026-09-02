@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 import asyncio
-import json
 import logging
-import re
 import sys
 import time
 from datetime import datetime
-from typing import Any
 
-import yaml
 from playwright.async_api import async_playwright, Page
 
 from youtube_chat_bot.ai_responder import AIResponder
@@ -20,6 +16,9 @@ from youtube_chat_bot.config import (
     RESPONDED_PATH,
     load_config,
 )
+from youtube_chat_bot.live_chat import LiveChatClient
+from youtube_chat_bot.response_router import ResponseRouter
+from youtube_chat_bot.storage import MessageStore
 
 log = logging.getLogger("youtube_chat_bot")
 
@@ -53,14 +52,23 @@ class YoutubeChatBot:
                 "as nossas redes sociais oficiais. Deus abençoe! 🙏"
             )
 
-        self._rule_cooldowns: dict[str | int, float] = {}
+        self.router = ResponseRouter(
+            ai=self.ai,
+            rules=self.rules,
+            default_resp=self.default_resp,
+            resposta_biblica=self.resposta_biblica,
+            resposta_horario=self.resposta_horario,
+        )
+
+        self.client = LiveChatClient(self.channel)
+
         self._last_msg_at: float = 0.0
         self._minute_count: int = 0
         self._minute_start: float = time.time()
-        self._seen: set[str] = set()
-        self._last_save: float = time.time()
+        self.store = MessageStore(RESPONDED_PATH)
+        self.store.load()
+        self._last_save: float = self.store.last_save
         self._save_interval: int = self.s.get("save_interval", 300)
-        self._load_responded()
         self._sent: set[str] = set()
         self._sent_responses: dict[str, float] = {}
         self._own_channel_name: str | None = None
@@ -68,27 +76,16 @@ class YoutubeChatBot:
         self._running: bool = True
 
     def _load_responded(self) -> None:
-        try:
-            if RESPONDED_PATH.exists():
-                data = json.loads(RESPONDED_PATH.read_text(encoding="utf-8"))
-                if isinstance(data, list):
-                    self._seen = set(data)
-                    log.info(
-                        f"Carregadas {len(self._seen)} mensagens "
-                        f"ja processadas"
-                    )
-        except Exception as e:
-            log.warning(f"Erro ao carregar responded_messages.json: {e}")
+        self.store.load()
+        self._last_save = self.store.last_save
 
     def _save_responded(self) -> None:
-        try:
-            RESPONDED_PATH.write_text(
-                json.dumps(list(self._seen), ensure_ascii=False),
-                encoding="utf-8",
-            )
-            self._last_save = time.time()
-        except Exception as e:
-            log.warning(f"Erro ao salvar responded_messages.json: {e}")
+        self.store.save()
+        self._last_save = self.store.last_save
+
+    def stop(self) -> None:
+        """Solicita parada graciosa do bot (pode ser chamado de qualquer thread)."""
+        self._running = False
 
     async def run(self) -> None:
         log.info("=" * 58)
@@ -128,7 +125,7 @@ class YoutubeChatBot:
             page = await ctx.new_page()
             try:
                 while self._running:
-                    video_id = await self._find_live(page)
+                    video_id = await self.client.find_live(page)
                     if video_id:
                         log.info(f"AO VIVO! ID: {video_id}")
                         await self._monitor_chat_with_retry(page, video_id)
@@ -145,101 +142,6 @@ class YoutubeChatBot:
                 await page.close()
                 await self.ai.close()
                 await ctx.close()
-
-    async def _find_live(self, page: Page) -> str | None:
-        try:
-            url = f"https://www.youtube.com/@{self.channel}/live"
-            log.info(f"Checando {url}")
-            await page.goto(
-                url, wait_until="domcontentloaded", timeout=25_000
-            )
-
-            try:
-                await page.wait_for_selector(
-                    "ytd-watch-flexy, ytd-rich-item-renderer, #contents",
-                    timeout=10_000,
-                )
-            except Exception:
-                pass
-
-            video_id = None
-
-            m = re.search(r"[?&]v=([\w-]{11})", page.url)
-            if m:
-                video_id = m.group(1)
-
-            if not video_id:
-                try:
-                    canon = await page.query_selector(
-                        'link[rel="canonical"]'
-                    )
-                    if canon:
-                        href = await canon.get_attribute("href")
-                        if href:
-                            m = re.search(r"v=([\w-]{11})", href)
-                            if m:
-                                video_id = m.group(1)
-                except Exception:
-                    pass
-
-            if not video_id:
-                try:
-                    vid = await page.evaluate("""
-                        () => {
-                            function extractId() {
-                                const el = document.querySelector(
-                                    'ytd-watch-flexy'
-                                );
-                                if (el) return el.getAttribute('video-id');
-                                if (
-                                    window.ytInitialPlayerResponse
-                                    ?.videoDetails?.videoId
-                                )
-                                    return window
-                                        .ytInitialPlayerResponse
-                                        .videoDetails.videoId;
-                                const scripts =
-                                    document.querySelectorAll('script');
-                                for (const s of scripts) {
-                                    const t = s.textContent || '';
-                                    const m = t.match(
-                                        /videoId["']?\\s*[:=]\\s*["']
-                                        ([\\w-]{11})["']/
-                                    );
-                                    if (m) return m[1];
-                                }
-                                return null;
-                            }
-                            const badges = document.querySelectorAll(
-                                '.badge-style-type-live, yt-icon-badge, '
-                                + '[label="AO VIVO"], [label="LIVE"]'
-                            );
-                            for (const b of badges) {
-                                const txt =
-                                    b.textContent.trim().toUpperCase();
-                                if (
-                                    txt.includes('AO VIVO')
-                                    || txt.includes('LIVE')
-                                ) {
-                                    return extractId();
-                                }
-                            }
-                            return null;
-                        }
-                    """)
-                    if vid and len(vid) == 11:
-                        video_id = vid
-                except Exception:
-                    pass
-
-            if video_id:
-                return video_id
-
-            log.info(f"Nenhuma live no ar. URL: {page.url}")
-            return None
-        except Exception as exc:
-            log.warning(f"Erro ao checar live: {exc}")
-            return None
 
     async def _monitor_chat_with_retry(
         self, page: Page, video_id: str
@@ -260,80 +162,27 @@ class YoutubeChatBot:
     async def _detect_own_channel(self, page: Page) -> None:
         if self._own_channel_name:
             return
-        try:
-            own_name = await page.evaluate("""
-                () => {
-                    const ownerItems = document.querySelectorAll(
-                        'yt-live-chat-text-message-renderer'
-                        + '[author-type="owner"]'
-                    );
-                    for (const item of ownerItems) {
-                        const nameEl =
-                            item.querySelector('#author-name');
-                        if (nameEl)
-                            return nameEl.textContent.trim();
-                    }
-                    const items = document.querySelectorAll(
-                        'yt-live-chat-text-message-renderer'
-                    );
-                    for (const item of items) {
-                        const badge =
-                            item.querySelector('#author-badge');
-                        if (badge) {
-                            const txt =
-                                badge.textContent.trim();
-                            if (
-                                txt.includes('Voce')
-                                || txt.includes('You')
-                            ) {
-                                const nameEl =
-                                    item.querySelector('#author-name');
-                                if (nameEl)
-                                    return nameEl.textContent.trim();
-                            }
-                        }
-                    }
-                    return null;
-                }
-            """)
-            if own_name:
-                self._own_channel_name = own_name
-                log.info(f"Nome do canal detectado: {own_name}")
-        except Exception as e:
-            log.debug(f"Detecao de canal: {e}")
+        own_name = await self.client.detect_own_channel(page)
+        if own_name:
+            self._own_channel_name = own_name
 
     async def _monitor_chat(
         self, page: Page, video_id: str
     ) -> None:
-        chat_url = (
-            f"https://www.youtube.com/live_chat"
-            f"?is_popout=1&v={video_id}"
-        )
-        await page.goto(
-            chat_url, wait_until="domcontentloaded", timeout=20_000
-        )
-
-        try:
-            await page.wait_for_selector(
-                "yt-live-chat-text-message-renderer", timeout=15_000
-            )
-        except Exception:
-            log.warning(
-                "Chat nao renderizou a tempo, continuando..."
-            )
+        await self.client.open_live_chat(page, video_id)
 
         if video_id != self._last_video_id:
-            self._seen.clear()
+            self.store.seen.clear()
             log.info("Live nova, limpando historico de mensagens")
         else:
             log.info(
                 f"Mesma live, mantendo "
-                f"{len(self._seen)} mensagens no historico"
+                f"{len(self.store.seen)} mensagens no historico"
             )
         self._last_video_id = video_id
         self._sent.clear()
         self._sent_responses.clear()
-        self._rule_cooldowns.clear()
+        self.router._rule_cooldowns.clear()
         self._last_msg_at = 0.0
         self._minute_count = 0
         self._minute_start = time.time()
@@ -362,29 +211,10 @@ class YoutubeChatBot:
         if time.time() - self._last_save >= self._save_interval:
             self._save_responded()
 
-        try:
-            els = await page.query_selector_all(
-                "yt-live-chat-text-message-renderer"
-            )
-        except Exception:
-            return
+        mensagens = await self.client.fetch_messages(page)
 
-        for el in els:
+        for author, text in mensagens:
             try:
-                author_el = await el.query_selector("#author-name")
-                msg_el = await el.query_selector("#message")
-                if not msg_el:
-                    continue
-
-                author = (
-                    (await author_el.inner_text()).strip()
-                    if author_el
-                    else "?"
-                )
-                text = (await msg_el.inner_text()).strip()
-                if not text:
-                    continue
-
                 if (
                     self._own_channel_name
                     and author == self._own_channel_name
@@ -398,7 +228,7 @@ class YoutubeChatBot:
                     continue
 
                 key = f"{author}|{text}"
-                if key in self._seen:
+                if key in self.store.seen:
                     continue
 
                 # Rate limit centralizado AQUI
@@ -448,295 +278,35 @@ class YoutubeChatBot:
                         self._last_msg_at = time.time()
                         self._minute_count += 1
                 finally:
-                    self._seen.add(key)
-                    if len(self._seen) > 2000:
-                        self._seen = set(
-                            list(self._seen)[-1000:]
-                        )
+                    self.store.add(key)
 
             except Exception:
                 continue
 
     @staticmethod
     def _should_discard(raw: str) -> bool:
-        if not raw:
-            return True
-        text = raw.strip()
-        # So pontuacao/emoji/espacos (ex: "!!!", "...", "🙏🙏") -> nao responde.
-        if re.fullmatch(r"[\s!?.,~^*\-_=+<>()\[\]{}'\"`\\/|@#$%&;:]*", text):
-            return True
-        # Apenas risadas repetitivas (kkkk, kkkkkk, hahaha, rsrs, hehe).
-        if re.fullmatch(
-            r"(?:k+|h+[aeiou]+|r+s+|rs+|kk+|ehehe|hahaha|(?:rs)+)[\s!?.,]*",
-            text,
-        ):
-            return True
-        # So emojis/teclas repetidas (ex: "😂😂😂", "asdfasdfasdf").
-        if re.fullmatch(r"(.)\1{2,}", text):
-            return True
-        return False
-
-    BIBLE_KEYWORDS = (
-        "versiculo", "versículo", "biblia", "bíblia", "salmo", "escritura",
-        "proverbio", "provérbio", "genesis", "gênesis", "exodo", "êxodo",
-        "evangelho", "apostolo", "apóstolo", "epistola", "epístola",
-        "capitulo", "capítulo", "livro de",
-        "o que a biblia", "o que deus", "jesus", "cristo", "deus diz",
-        "qual versiculo", "que versiculo", "onde esta escrito",
-        "estudar a biblia", "estudo biblico", "estudo bíblico",
-        "interpretar", "significado de", "doutrina", "teologia",
-    )
+        return ResponseRouter.should_discard(raw)
 
     def _is_bible_question(self, raw: str) -> bool:
-        for kw in self.BIBLE_KEYWORDS:
-            if kw in raw:
-                return True
-        return False
-
-    HORARIO_KEYWORDS = (
-        "que horas", "a que horas", "horario do culto", "horario dos cultos",
-        "hora do culto", "que dia tem culto", "dias de culto",
-        "quando comeca o culto", "que hora comeca", "qual o horario",
-        "qual o dia", "quando tem culto", "que dias", "horario",
-    )
+        return self.router.is_bible_question(raw)
 
     def _is_horario_question(self, raw: str) -> bool:
-        for kw in self.HORARIO_KEYWORDS:
-            if kw in raw:
-                return True
-        return False
+        return self.router.is_horario_question(raw)
 
     async def _decide_response(
         self, author: str, message: str
     ) -> str | None:
-        raw = message.lower().strip()
-        if not raw:
-            return None
-
-        if self._should_discard(raw):
-            log.debug(f"Descarte: mensagem de baixo valor: {author}: {message[:60]}")
-            return None
-
-        resolved_keyword = ""
-        matched_rule = None
-        matched_idx = -1
-
-        for idx, rule in enumerate(self.rules):
-            if not rule.get("enabled", True):
-                continue
-            for kw in rule["keywords"]:
-                if kw.lower() in raw:
-                    resolved_keyword = kw
-                    matched_idx = idx
-                    matched_rule = rule
-                    break
-            if matched_rule:
-                break
-
-        if self.ai_mode == "ai":
-            if not self.ai.enabled:
-                log.warning(
-                    "Modo 'ai' sem IA ativa (chave de API ausente) — "
-                    "modo 'ai' nao usa regras fixas, nada sera postado"
-                )
-                return None
-
-            if self._is_horario_question(raw):
-                log.info(
-                    f"Pergunta de horário identificada — resposta oficial: "
-                    f"{author}: {message[:60]}"
-                )
-                return self.resposta_horario
-
-            if self._is_bible_question(raw):
-                log.info(
-                    f"Pergunta bíblica identificada — resposta institucional: "
-                    f"{author}: {message[:60]}"
-                )
-                return self.resposta_biblica
-
-            ai_resp = await self.ai.generate(author, message)
-            if ai_resp:
-                return ai_resp
-            if self.ai._last_skipped:
-                log.debug(
-                    f"IA pulou intencionalmente (SKIP): "
-                    f"{author}: {message[:60]}"
-                )
-            else:
-                log.warning(
-                    f"IA nao respondeu (sem fallback no modo 'ai'): "
-                    f"{author}: {message[:60]}"
-                )
-            return None
-
-        if self.ai_mode == "hybrid":
-            if matched_rule:
-                last = self._rule_cooldowns.get(matched_idx, 0.0)
-                if time.time() - last < matched_rule.get("cooldown", 20):
-                    return None
-                self._rule_cooldowns[matched_idx] = time.time()
-
-                if self.ai.enabled:
-                    ai_resp = await self.ai.generate(
-                        author, message, resolved_keyword
-                    )
-                    if ai_resp:
-                        return ai_resp
-                return matched_rule["response"]
-            return None
-
-        if matched_rule:
-            return self._apply_rule(matched_idx, matched_rule)
-        return self._default_response()
+        return await self.router.decide(author, message, self.ai_mode)
 
     def _apply_rule(self, idx: int, rule: dict) -> str | None:
-        last = self._rule_cooldowns.get(idx, 0.0)
-        if time.time() - last < rule.get("cooldown", 20):
-            return None
-        self._rule_cooldowns[idx] = time.time()
-        return rule["response"]
+        return self.router._apply_rule(idx, rule)
 
     def _default_response(self) -> str | None:
-        d = self.default_resp
-        if not d.get("enabled", True):
-            return None
-        last = self._rule_cooldowns.get("__default__", 0.0)
-        if time.time() - last < d.get("cooldown", 10):
-            return None
-        self._rule_cooldowns["__default__"] = time.time()
-        return d["response"]
+        return self.router._default_response()
+
 
     async def _send(self, page: Page, text: str) -> None:
-        log.info(f"-> {text}")
-
-        frames = [page] + [f for f in page.frames]
-        selectors = (
-            "yt-live-chat-text-input-field-renderer div#input",
-            "yt-live-chat-message-input-renderer #input",
-            "#input",
-            "[contenteditable]",
-            "div#input",
-            "#chat-input",
-            "#message-input",
-        )
-
-        # Metodo visual
-        for target in frames:
-            for sel in selectors:
-                try:
-                    inp = await target.query_selector(sel)
-                    if inp is None:
-                        continue
-
-                    await inp.focus()
-                    await asyncio.sleep(0.3)
-                    await inp.fill("")
-                    await asyncio.sleep(0.3)
-                    await inp.type(text, delay=0.05)
-                    await asyncio.sleep(0.5)
-                    await target.keyboard.press("Enter")
-                    await asyncio.sleep(1.5)
-
-                    cleared = await target.evaluate("""
-                        () => {
-                            const ce = document.querySelector(
-                                '[contenteditable]'
-                            );
-                            if (!ce) return false;
-                            return ce.textContent.trim().length === 0;
-                        }
-                    """)
-                    if cleared:
-                        log.info("Enviado! (visual)")
-                        return
-
-                    await target.keyboard.press("Enter")
-                    await asyncio.sleep(1)
-                    cleared = await target.evaluate("""
-                        () => {
-                            const ce = document.querySelector(
-                                '[contenteditable]'
-                            );
-                            return ce
-                                ? ce.textContent.trim().length === 0
-                                : false;
-                        }
-                    """)
-                    if cleared:
-                        log.info("Enviado! (Enter2)")
-                        return
-                except Exception:
-                    continue
-
-        # Fallback JS
-        log.info("Tentando fallback via JavaScript...")
-        safe = (
-            text.replace("\\", "\\\\")
-            .replace("'", "\\'")
-            .replace("\n", "\\n")
-        )
-
-        for target in frames:
-            try:
-                result = await target.evaluate(
-                    """
-                    (text) => {
-                        function findInput(container) {
-                            let el = container.querySelector(
-                                '#input, div#input, '
-                                + '[contenteditable], textarea'
-                            );
-                            if (el) return el;
-                            if (container.shadowRoot) {
-                                el = container.shadowRoot
-                                    .querySelector('#input');
-                                if (el) return el;
-                            }
-                            const r = container.querySelector(
-                                'yt-live-chat-text-input-field-renderer'
-                            );
-                            if (r && r.shadowRoot) {
-                                el = r.shadowRoot
-                                    .querySelector('#input');
-                                if (el) return el;
-                            }
-                            return null;
-                        }
-                        const inp = findInput(document);
-                        if (!inp) return 'NF';
-                        inp.focus();
-                        if (inp.isContentEditable) {
-                            inp.textContent = '';
-                            document.execCommand(
-                                'insertText', false, text
-                            );
-                            return 'CE';
-                        }
-                        if (
-                            inp.tagName === 'TEXTAREA'
-                            || inp.tagName === 'INPUT'
-                        ) {
-                            inp.value = text;
-                            return inp.tagName;
-                        }
-                        inp.textContent = text;
-                        return 'TXT';
-                    }
-                """,
-                    safe,
-                )
-
-                if result and result != "NF":
-                    await asyncio.sleep(0.5)
-                    await target.keyboard.press("Enter")
-                    await asyncio.sleep(1)
-                    log.info("Enviado! (JS + Enter)")
-                    return
-            except Exception as e:
-                log.debug(f"JS erro: {str(e)[:100]}")
-
-        log.warning("Todos os metodos de envio falharam")
+        await self.client.send(page, text)
 
 
 def _setup_logging(cfg: dict) -> None:

@@ -67,7 +67,7 @@ class BotController(QObject):
         self.obs_status_changed.emit("conectado")
         self.status_changed.emit("aguardando transmissão...")
         if self._bot:
-            self._bot._running = False
+            self._bot.stop()
         if self._bot_task and not self._bot_task.done():
             self._bot_task.cancel()
             try:
@@ -114,7 +114,7 @@ class BotController(QObject):
 
     def _do_stop(self):
         if self._bot:
-            self._bot._running = False
+            self._bot.stop()
 
     def start(self):
         if self._task and not self._task.done():
